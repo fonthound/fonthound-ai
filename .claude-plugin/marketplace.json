@@ -1,0 +1,15 @@
+{
+  "name": "fonthound",
+  "description": "FontHound AI: the fonts you picked in FontHound, used exactly by your AI.",
+  "owner": {
+    "name": "FontHound",
+    "email": "support@fonthound.app"
+  },
+  "plugins": [
+    {
+      "name": "fonthound",
+      "source": "./",
+      "description": "Use the fonts you picked by eye in FontHound, exactly, in the videos Claude makes."
+    }
+  ]
+}

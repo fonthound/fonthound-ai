@@ -1,0 +1,26 @@
+{
+  "name": "fonthound",
+  "displayName": "FontHound",
+  "version": "0.1.0",
+  "description": "Use the fonts you picked by eye in FontHound, exactly, in videos your AI makes with Remotion, HTML, ffmpeg or Pillow. Local only.",
+  "author": {
+    "name": "FontHound",
+    "email": "support@fonthound.app",
+    "url": "https://fonthound.app"
+  },
+  "homepage": "https://fonthound.app",
+  "repository": "https://github.com/fonthound/fonthound-ai",
+  "license": "MIT",
+  "keywords": [
+    "fonts",
+    "typography",
+    "video",
+    "remotion",
+    "titles",
+    "motion-graphics"
+  ],
+  "documentationUrl": "https://github.com/fonthound/fonthound-ai",
+  "supportUrl": "https://fonthound.app",
+  "privacyPolicyUrl": "https://fonthound.app/privacy.html",
+  "termsOfServiceUrl": "https://fonthound.app/terms.html"
+}
