@@ -27,7 +27,12 @@ every installed font and no tool that recommends fonts.
   - `get_font_files`: each font's file and whether it exists;
   - `open_fonthound`: opens FontHound's Mockup with your title (and optionally a
     still from your video);
-  - `wait_for_selection`: waits until you press Send to AI.
+  - `wait_for_selection`: waits until you press Send to AI (up to 20 minutes;
+    a Send that lands as the wait ends still counts).
+
+If a picked font looks like a trial, demo or personal-use file (from its file
+name or its name table), the selection says so (`licenseHint`) and Claude
+mentions it once; nothing is blocked.
 
 ## Install
 
@@ -37,9 +42,20 @@ users usually have it). FontHound runs on Windows; macOS is coming.
 
 ### Claude Code (recommended: Claude offers FontHound by itself)
 
+In Claude Code in a terminal:
+
 ```
 /plugin marketplace add fonthound/fonthound-ai
 /plugin install fonthound@fonthound
+```
+
+**In the Claude desktop app**, the `/plugin` command needs Claude Code's
+interactive terminal, so install from a terminal instead (Command Prompt,
+PowerShell or Terminal), then start a new session in the app:
+
+```
+claude plugin marketplace add fonthound/fonthound-ai
+claude plugin install fonthound@fonthound
 ```
 
 Then ask for a video, for example "Make a 10-second Remotion intro that says

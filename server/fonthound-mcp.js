@@ -30,17 +30,21 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const DOWNLOAD = 'https://fonthound.app/download';
 const NO_SELECTION = 'No FontHound selection yet. Ask the user to open FontHound, put the fonts they like in the Mockup and press "Send to AI", then try again.';
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif)$/i;
+// wait_for_selection: picking fonts by eye takes a while
+const WAIT_DEFAULT_S = 1200;
+const WAIT_MAX_S = 1800;
 
 function createServer(opts = {}) {
   const env = opts.env || process.env;
   const platform = opts.platform || process.platform;
   const execFile = opts.execFile || childProcess.execFile;
   const sleep = opts.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const now = opts.now || Date.now;
   const homedir = opts.homedir || os.homedir;
   const fileExists = opts.fileExists || ((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
 
@@ -101,7 +105,7 @@ function createServer(opts = {}) {
     {
       name: 'get_font_selection',
       title: 'Get the fonts picked in FontHound',
-      description: 'Returns the fonts the user picked by eye in FontHound\'s Mockup (options 1-5): family, style, PostScript name, CSS font-family/weight/style, font file path (none for Adobe Fonts: load those by name only), and the look (size in px of the frame and % of frame width, colour, tracking, leading, stroke, shadow, background box, rotation, position), plus the title line and the frame size. Use these exact fonts; never substitute.',
+      description: 'Returns the fonts the user picked by eye in FontHound\'s Mockup (options 1-5): family, style, PostScript name, CSS font-family/weight/style, font file path (none for Adobe Fonts: load those by name only), and the look (size in px of the frame and % of frame width, colour, tracking, leading, stroke, shadow, background box, rotation, position), `licenseHint` when the font file looks like a trial, demo or personal-use font (tell the user once, then go on), plus the title line, the frame size and `sent` (when Send to AI was last pressed). Use these exact fonts; never substitute.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -130,12 +134,12 @@ function createServer(opts = {}) {
     {
       name: 'wait_for_selection',
       title: 'Wait for the user to send fonts',
-      description: 'Waits until the user presses "Send to AI" in FontHound (after `since`), then returns the selection like get_font_selection. Returns status "timeout" if nothing was sent in time; then ask the user whether they are done.',
+      description: 'Waits until the user presses "Send to AI" in FontHound (after `since`), then returns the selection like get_font_selection. Returns status "timeout" (with `since`) if nothing was sent in time; then call get_font_selection: if its selection\'s `sent` is after `since`, use it; otherwise ask the user whether they are done.',
       inputSchema: {
         type: 'object',
         properties: {
           since: { type: 'string', description: 'ISO time from open_fonthound; only a "Send to AI" after it counts. Default: now.' },
-          timeout_s: { type: 'number', description: 'Seconds to wait (1-1800, default 600).' },
+          timeout_s: { type: 'number', description: `Seconds to wait (1-${WAIT_MAX_S}, default ${WAIT_DEFAULT_S}).` },
         },
         additionalProperties: false,
       },
@@ -195,16 +199,29 @@ function createServer(opts = {}) {
       return ok({ status: 'opened', since, message: 'FontHound is open at the Mockup with the line. Ask the user to put the fonts they like in the Mockup, adjust the look, and press "Send to AI". Then call wait_for_selection with this `since`.' });
     }
     if (name === 'wait_for_selection') {
-      const since = Date.parse(args.since) || Date.now();
-      const seconds = Math.min(1800, Math.max(1, Number(args.timeout_s) || 600));
-      const until = Date.now() + seconds * 1000;
-      for (;;) {
+      const since = Date.parse(args.since) || now();
+      const seconds = Math.min(WAIT_MAX_S, Math.max(1, Number(args.timeout_s) || WAIT_DEFAULT_S));
+      const until = now() + seconds * 1000;
+      // the selection, if "Send to AI" was pressed after `since`
+      const sentSince = () => {
         const sel = readSelection();
-        if (sel && Date.parse(sel.sent) > since) return ok({ status: 'ok', selection: sel });
-        if (Date.now() >= until) break;
-        await sleep(Math.min(1000, Math.max(0, until - Date.now())));
+        return sel && Date.parse(sel.sent) > since ? sel : null;
+      };
+      for (;;) {
+        const sel = sentSince();
+        if (sel) return ok({ status: 'ok', selection: sel });
+        if (now() >= until) break;
+        await sleep(Math.min(1000, Math.max(0, until - now())));
       }
-      return ok({ status: 'timeout', message: `Nothing was sent from FontHound in ${seconds} s. Ask the user whether they've finished picking (they press "Send to AI" in the Mockup when done); then call wait_for_selection again, or get_font_selection for what's in the Mockup now.` });
+      // one last look: a Send that landed just as the time ran out still counts
+      const late = sentSince();
+      if (late) return ok({ status: 'ok', selection: late });
+      return ok({
+        status: 'timeout',
+        since: new Date(since).toISOString(),
+        timeout_s: seconds,
+        message: `Nothing was sent from FontHound in ${seconds} s. Call get_font_selection: if its selection's \`sent\` is after ${new Date(since).toISOString()}, the user sent it meanwhile, so use it. Otherwise ask the user whether they've finished picking (they press "Send to AI" in the Mockup when done); then call wait_for_selection again with the same \`since\`.`,
+      });
     }
     return null;
   }

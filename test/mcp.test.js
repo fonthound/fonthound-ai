@@ -209,4 +209,84 @@ test('wait_for_selection times out cleanly', async () => {
   assert.ok(Date.now() - t0 >= 950 && Date.now() - t0 < 2500);
 });
 
+// a clock that only moves when the server sleeps: 20 minutes in no time
+function fakeClock(start = Date.parse('2026-10-05T10:00:00.000Z')) {
+  let t = start;
+  let slept = 0;
+  return {
+    now: () => t,
+    sleep: async (ms) => { t += ms; slept += ms; },
+    slept: () => slept,
+    set: (v) => { t = v; },
+  };
+}
+
+test('wait_for_selection waits 1200 s by default, 1800 s at most', async () => {
+  const clock = fakeClock();
+  const s = createServer({ env: { FONTHOUND_SELECTION_FILE: missingFile }, now: clock.now, sleep: clock.sleep });
+  const out = JSON.parse((await s.callTool('wait_for_selection', {})).content[0].text);
+  assert.equal(out.status, 'timeout');
+  assert.equal(out.timeout_s, 1200);
+  assert.equal(clock.slept(), 1200 * 1000);
+  assert.equal(out.since, new Date(Date.parse('2026-10-05T10:00:00.000Z')).toISOString());
+  assert.match(out.message, /get_font_selection/);
+  const capped = fakeClock();
+  const s2 = createServer({ env: { FONTHOUND_SELECTION_FILE: missingFile }, now: capped.now, sleep: capped.sleep });
+  const out2 = JSON.parse((await s2.callTool('wait_for_selection', { timeout_s: 99999 })).content[0].text);
+  assert.equal(out2.timeout_s, 1800);
+  assert.equal(capped.slept(), 1800 * 1000);
+  const def = s.TOOLS.find((t) => t.name === 'wait_for_selection').inputSchema.properties.timeout_s.description;
+  assert.match(def, /1-1800, default 1200/);
+});
+
+test('wait_for_selection: a Send just as the time runs out still counts', async () => {
+  const file = path.join(dir, 'race.json');
+  const start = Date.parse('2026-10-05T10:00:00.000Z');
+  fs.writeFileSync(file, JSON.stringify(sample('2020-01-01T00:00:00.000Z')));
+  let t = start;
+  let wrote = false;
+  // the user presses Send between the server's last look and its deadline check
+  const now = () => {
+    if (t >= start + 5000 && !wrote) {
+      wrote = true;
+      fs.writeFileSync(file, JSON.stringify(sample(new Date(start + 4999).toISOString())));
+    }
+    return t;
+  };
+  const s = createServer({ env: { FONTHOUND_SELECTION_FILE: file }, now, sleep: async (ms) => { t += ms; } });
+  const out = JSON.parse((await s.callTool('wait_for_selection', { since: new Date(start).toISOString(), timeout_s: 5 })).content[0].text);
+  assert.equal(wrote, true);
+  assert.equal(out.status, 'ok');
+  assert.equal(out.selection.sent, new Date(start + 4999).toISOString());
+});
+
+test('wait_for_selection: a Send before `since` is not taken at the deadline either', async () => {
+  const file = path.join(dir, 'old.json');
+  const start = Date.parse('2026-10-05T10:00:00.000Z');
+  fs.writeFileSync(file, JSON.stringify(sample(new Date(start - 1000).toISOString())));
+  const clock = fakeClock(start);
+  const s = createServer({ env: { FONTHOUND_SELECTION_FILE: file }, now: clock.now, sleep: clock.sleep });
+  const out = JSON.parse((await s.callTool('wait_for_selection', { since: new Date(start).toISOString(), timeout_s: 3 })).content[0].text);
+  assert.equal(out.status, 'timeout');
+  // what the skill does next: get_font_selection, compare `sent` with `since`
+  const got = JSON.parse((await s.callTool('get_font_selection', {})).content[0].text);
+  assert.ok(Date.parse(got.selection.sent) < Date.parse(out.since));
+});
+
+test('a licence hint passes through to Claude untouched', async () => {
+  const file = path.join(dir, 'hint.json');
+  const sel = sample(new Date().toISOString());
+  sel.fonts[0].licenseHint = 'trial';
+  fs.writeFileSync(file, JSON.stringify(sel));
+  const got = JSON.parse((await createServer({ env: { FONTHOUND_SELECTION_FILE: file } }).callTool('get_font_selection', {})).content[0].text);
+  assert.equal(got.selection.fonts[0].licenseHint, 'trial');
+  assert.equal(got.selection.fonts[1].licenseHint, undefined);
+});
+
+test('the plugin manifest and the server agree on the version', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8'));
+  assert.equal(manifest.version, '0.1.1');
+  assert.match(fs.readFileSync(SERVER, 'utf8'), /const VERSION = '0\.1\.1';/);
+});
+
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));

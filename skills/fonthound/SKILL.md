@@ -35,8 +35,11 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
 2. Tell the user: "FontHound is open with your title. Put the fonts you like in
    the Mockup, adjust the look, and press **Send to AI**."
 3. Call `wait_for_selection` with the `since` that `open_fonthound` returned
-   (use `timeout_s: 300`). When it returns `status: "timeout"`, ask the user
-   whether they're done; then wait again, or call `get_font_selection`.
+   (leave `timeout_s` out: it waits up to 20 minutes). When it returns
+   `status: "timeout"`, call `get_font_selection` first: if its selection's
+   `sent` is after `since`, the user sent it meanwhile, so use it. Otherwise ask
+   the user whether they're done, then call `wait_for_selection` again with the
+   same `since`.
 4. If `open_fonthound` says FontHound isn't installed, tell the user (free 14-day
    trial at https://fonthound.app/download) and ask whether you should choose instead.
 
@@ -48,12 +51,14 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
   frame the look was designed on; px values are in its pixels).
 - `fonts[]`, options 1-5 in the user's order. Option 1 is the default; use other
   options only where the user says so (or ask). Each has `family`, `style`,
-  `postscriptName`, `fullName`, `weight`, `italic`, `css`, `file` (absolute path,
-  or null), `source` (`installed`, `adobe-fonts`, `not-installed`), `note`, and
-  `look`: `sizePx`, `sizePercentOfFrameWidth`, `color`, `tracking` (1/1000 em) and
+  `postscriptName`, `fullName`, `weight`, `italic`, `stretch`, `css`, `file`
+  (absolute path, or null), `source` (`installed`, `adobe-fonts`, `not-installed`),
+  `note`, sometimes `licenseHint` (see below), and `look`: `sizePx`,
+  `sizePercentOfFrameWidth`, `color`, `tracking` (1/1000 em) and
   `letterSpacingEm`, `leadingPx` and `lineHeightPx`, `stroke`, `shadow` (with
   `offsetXPx`/`offsetYPx`), `box`, `rotationDeg`, `position` (`xPercent`,
   `yPercent` of the text's centre).
+- `sent`: when the user last pressed Send to AI.
 
 Rules:
 
@@ -68,6 +73,11 @@ Rules:
   say so and offer an HTML/Remotion render instead.
 - **`not-installed`:** a free Google font the user previewed without installing.
   Ask them to install it (FontHound > Get fonts) or load it from Google Fonts.
+- **`licenseHint`** (`trial`, `demo`, `personal-use` or `non-commercial`): the
+  font's file name or name table suggests a restricted licence. Tell the user
+  briefly, once (for example: "Note: Option 2 looks like a trial font; it usually
+  can't be used in commercial work until bought."), then carry on with it. Don't
+  refuse, don't swap it for another font, and don't repeat the warning.
 - **Scale the look with the frame:** `value * (your width / frame.width)`.
 - **Load the exact weight and style** (no faux bold or italic).
 - **Rendering in the cloud** (Remotion Lambda, a hosted renderer)? The font file must
