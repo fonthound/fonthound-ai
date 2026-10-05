@@ -15,7 +15,7 @@
 // Tools:
 //   get_font_selection  the selection (names, PostScript names, files, look)
 //   get_font_files      each chosen font's file and whether it exists
-//   open_fonthound      opens FontHound's Mockup with the user's title line
+//   open_fonthound      opens FontHound on its Fonts tab with the user's title line
 //   wait_for_selection  waits until the user presses "Send to AI"
 // Deliberately absent: a list of every installed font, and any tool that
 // picks or recommends fonts. The user picks; the AI uses what was picked.
@@ -30,7 +30,7 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const DOWNLOAD = 'https://fonthound.app/download';
 const NO_SELECTION = 'No FontHound selection yet. Ask the user to open FontHound, put the fonts they like in the Mockup and press "Send to AI", then try again.';
@@ -88,7 +88,7 @@ function createServer(opts = {}) {
     return dirs.filter(Boolean).map((d) => path.win32.join(d, 'fonthound.exe')).find(fileExists) || null;
   }
 
-  // the program and arguments that open FontHound's Mockup with `line`
+  // the program and arguments that open FontHound with `line`
   async function launchCommand(line, frame) {
     const args = ['--mockup-line', line, ...(frame ? ['--mockup-frame', frame] : [])];
     if (platform === 'win32') {
@@ -119,7 +119,7 @@ function createServer(opts = {}) {
     {
       name: 'open_fonthound',
       title: 'Open FontHound with the title',
-      description: 'Opens the FontHound app on this computer at its Mockup, with the video\'s title line typed in (and optionally a still frame from the video as the background), so the user can see the line in their own installed fonts and pick by eye. After calling it, call wait_for_selection with the returned `since`.',
+      description: 'Opens the FontHound app on this computer on its Fonts tab, with the video\'s title line typed in so it shows in every installed font (and optionally a still frame from the video for the Mockup), so the user can see the line in their own installed fonts and pick by eye. After calling it, call wait_for_selection with the returned `since`.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -196,7 +196,7 @@ function createServer(opts = {}) {
       } catch (e) {
         return fail(`FontHound couldn't be started (${e.message}).`);
       }
-      return ok({ status: 'opened', since, message: 'FontHound is open at the Mockup with the line. Ask the user to put the fonts they like in the Mockup, adjust the look, and press "Send to AI". Then call wait_for_selection with this `since`.' });
+      return ok({ status: 'opened', since, message: 'FontHound is open on its Fonts tab with the line shown in every font. Ask the user to add the fonts they like to the Mockup (+), adjust the look there, and press "Send to AI". Then call wait_for_selection with this `since`.' });
     }
     if (name === 'wait_for_selection') {
       const since = Date.parse(args.since) || now();

@@ -285,8 +285,8 @@ test('a licence hint passes through to Claude untouched', async () => {
 
 test('the plugin manifest and the server agree on the version', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8'));
-  assert.equal(manifest.version, '0.1.1');
-  assert.match(fs.readFileSync(SERVER, 'utf8'), /const VERSION = '0\.1\.1';/);
+  assert.equal(manifest.version, '0.1.2');
+  assert.match(fs.readFileSync(SERVER, 'utf8'), /const VERSION = '0\.1\.2';/);
 });
 
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));

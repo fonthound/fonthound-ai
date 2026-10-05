@@ -32,8 +32,8 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
    the user's language and line breaks). If you already rendered a still from the
    video, pass its absolute path as `frame_path` so they judge the fonts on the
    real shot.
-2. Tell the user: "FontHound is open with your title. Put the fonts you like in
-   the Mockup, adjust the look, and press **Send to AI**."
+2. Tell the user: "FontHound is open with your title in every font. Add the ones
+   you like to the Mockup (+), adjust the look there, and press **Send to AI**."
 3. Call `wait_for_selection` with the `since` that `open_fonthound` returned
    (leave `timeout_s` out: it waits up to 20 minutes). When it returns
    `status: "timeout"`, call `get_font_selection` first: if its selection's

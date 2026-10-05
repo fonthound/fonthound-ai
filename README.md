@@ -25,7 +25,7 @@ every installed font and no tool that recommends fonts.
   dependencies) with four tools:
   - `get_font_selection`: the fonts you sent from FontHound and their look;
   - `get_font_files`: each font's file and whether it exists;
-  - `open_fonthound`: opens FontHound's Mockup with your title (and optionally a
+  - `open_fonthound`: opens FontHound on its Fonts tab with your title (and optionally a
     still from your video);
   - `wait_for_selection`: waits until you press Send to AI (up to 20 minutes;
     a Send that lands as the wait ends still counts).
