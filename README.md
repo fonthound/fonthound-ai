@@ -59,6 +59,12 @@ claude plugin marketplace add fonthound/fonthound-ai
 claude plugin install fonthound@fonthound
 ```
 
+**Turn on updates** (once): third-party plugin sources don't update on their
+own. Run `/plugin`, open **Marketplaces**, choose **fonthound** and switch on
+**auto-update**; new versions then arrive when Claude starts. To update by hand:
+`claude plugin marketplace update fonthound` then
+`claude plugin update fonthound@fonthound`, and restart Claude.
+
 Then ask for a video, for example "Make a 10-second Remotion intro that says
 Lemon Season", or say "use my FontHound fonts" after pressing Send to AI.
 
