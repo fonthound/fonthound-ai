@@ -10,7 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { createServer, quoteWindowsArg, windowsCommandLine, WMI_SCRIPT } = require('../server/fonthound-mcp.js');
+const { createServer } = require('../server/fonthound-mcp.js');
 
 const SERVER = path.join(__dirname, '..', 'server', 'fonthound-mcp.js');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fh-mcp-'));
@@ -123,49 +123,139 @@ test('the selection file is per user, where FontHound writes it', () => {
   assert.equal(mac.selectionFile(), '/Users/ed/Library/Application Support/FontHound/ai-selection.json');
 });
 
-// a stand-in for child_process.execFile: records the call, answers `reg`
-function fakeExec(regAnswers = {}) {
+// A stand-in for child_process.execFile on Windows. Answers reg.exe from
+// regAnswers; tasklist.exe from `ready` (a list of answers, the last one
+// repeats: true = FontHound's window is listed, 'siw' = its hidden
+// single-instance window, 'na' = no window yet, false = not running);
+// explorer.exe exits with 1 (as the real one does); fonthound.exe (the
+// hand-over) exits at once with `handover` (null = ok), or never ('hang').
+function fakeWin({ regAnswers = {}, ready = [true], handover = null } = {}) {
   const calls = [];
   const execFile = (cmd, args, opts, cb) => {
-    calls.push({ cmd, args });
-    if (cmd === 'reg') {
+    const call = { cmd, args, killed: false };
+    calls.push(call);
+    const child = { unref() {}, kill() { call.killed = true; } };
+    if (/reg\.exe$/i.test(cmd)) {
       const v = regAnswers[args[1]];
-      setImmediate(() => (v ? cb(null, `\r\n${args[1]}\r\n    (Default)    REG_SZ    ${v}\r\n`) : cb(new Error('not found'))));
+      setImmediate(() => (v ? cb(null, '\r\n' + args[1] + '\r\n    (Default)    REG_SZ    ' + v + '\r\n') : cb(new Error('not found'))));
+    } else if (/tasklist\.exe$/i.test(cmd)) {
+      const r = ready.length > 1 ? ready.shift() : ready[0];
+      const out = r === true ? '"fonthound.exe","4242","Console","1","50,000 K","Running","PC\\Ed","0:00:01","FontHound"\r\n'
+        : r === 'siw' ? '"fonthound.exe","4242","Console","1","50,000 K","Running","PC\\Ed","0:00:01","app.fonthound.desktop-siw"\r\n'
+          : r === 'na' ? '"fonthound.exe","4242","Console","1","50,000 K","Running","PC\\Ed","0:00:00","N/A"\r\n'
+            : 'INFO: No tasks are running which match the specified criteria.\r\n';
+      setImmediate(() => cb(null, out, ''));
+    } else if (/explorer\.exe$/i.test(cmd)) {
+      setImmediate(() => cb(Object.assign(new Error('Command failed'), { code: 1 })));
+    } else if (handover !== 'hang') {
+      setImmediate(() => cb(handover));
     }
-    return { unref() {} };
+    return child;
   };
-  return { calls, execFile };
+  const started = () => calls.filter((c) => !/(reg|tasklist)\.exe$/i.test(c.cmd));
+  return { calls, execFile, started };
 }
+const WIN = { SystemRoot: 'C:\\Windows', APPDATA: 'C:\\Users\\Ed\\AppData\\Roaming', LOCALAPPDATA: 'C:\\Users\\Ed\\AppData\\Local', TEMP: 'C:\\Users\\Ed\\AppData\\Local\\Temp' };
+const EXPLORER = 'C:\\Windows\\explorer.exe';
+const quiet = () => {};
+const fast = { readyTimeout: 3000, readyPoll: 500, handoverTimeout: 50 };
 
-test('open_fonthound starts fonthound.exe with --mockup-line (and --mockup-frame)', async () => {
+test('open_fonthound: FontHound already open, so the line is handed to it (no shell, no explorer)', async () => {
   const exe = 'D:\\Apps\\FontHound\\fonthound.exe';
   const frame = path.join(dir, 'frame.png');
   fs.writeFileSync(frame, 'png');
-  const fx = fakeExec({ 'HKCU\\Software\\fonthound\\FontHound': 'D:\\Apps\\FontHound' });
-  const s = createServer({ env: {}, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe || p === frame });
+  const fx = fakeWin({ regAnswers: { 'HKCU\\Software\\fonthound\\FontHound': 'D:\\Apps\\FontHound' } });
+  const s = createServer({ env: WIN, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe || p === frame, log: quiet });
   const r = await s.callTool('open_fonthound', { line: '  Lemon "Season" & co  ', frame_path: frame });
   assert.ok(!r.isError, r.content[0].text);
   const out = JSON.parse(r.content[0].text);
   assert.equal(out.status, 'opened');
   assert.ok(Date.parse(out.since) <= Date.now());
-  const run = fx.calls.find((c) => c.cmd !== 'reg');
-  assert.equal(run.cmd, exe);
-  // one argument each, as given: no shell, nothing to quote or escape
-  assert.deepEqual(run.args, ['--mockup-line', 'Lemon "Season" & co', '--mockup-frame', frame]);
-  // without a frame
-  const fx2 = fakeExec({ 'HKLM\\Software\\fonthound\\FontHound': 'D:\\Apps\\FontHound' });
-  const s2 = createServer({ env: {}, platform: 'win32', execFile: fx2.execFile, fileExists: (p) => p === exe });
-  await s2.callTool('open_fonthound', { line: 'שלום' });
-  assert.deepEqual(fx2.calls.find((c) => c.cmd !== 'reg').args, ['--mockup-line', 'שלום']);
+  assert.equal(fx.calls[0].cmd, 'C:\\Windows\\System32\\reg.exe');
+  // one argument each, as given: nothing to quote or escape; a frame outside %APPDATA% is passed as it is
+  assert.deepEqual(fx.started(), [{ cmd: exe, args: ['--mockup-line', 'Lemon "Season" & co', '--mockup-frame', frame], killed: false }]);
+  const list = fx.calls.find((c) => /tasklist/.test(c.cmd));
+  assert.equal(list.cmd, 'C:\\Windows\\System32\\tasklist.exe');
+  assert.deepEqual(list.args, ['/V', '/FI', 'IMAGENAME eq fonthound.exe', '/FO', 'CSV', '/NH']);
+  // the hidden single-instance window counts as open too
+  const fx2 = fakeWin({ regAnswers: { 'HKLM\\Software\\fonthound\\FontHound': 'D:\\Apps\\FontHound' }, ready: ['siw'] });
+  const s2 = createServer({ env: WIN, platform: 'win32', execFile: fx2.execFile, fileExists: (p) => p === exe, log: quiet });
+  assert.equal(JSON.parse((await s2.callTool('open_fonthound', { line: 'שלום' })).content[0].text).status, 'opened');
+  assert.deepEqual(fx2.started().map((c) => c.args), [['--mockup-line', 'שלום']]);
+});
+
+test('open_fonthound: FontHound not open, so the Windows shell starts it, then the line is handed over', async () => {
+  const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
+  const clock = fakeClock();
+  // not listed, then a process without a window yet, then its window
+  const fx = fakeWin({ ready: [false, 'na', 'na', true] });
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe,
+    now: clock.now, sleep: clock.sleep, timing: fast, log: quiet });
+  const out = JSON.parse((await s.callTool('open_fonthound', { line: 'Hi there' })).content[0].text);
+  assert.equal(out.status, 'opened');
+  assert.deepEqual(fx.started(), [
+    { cmd: EXPLORER, args: [exe], killed: false }, // the path only: explorer.exe takes no arguments for the app
+    { cmd: exe, args: ['--mockup-line', 'Hi there'], killed: false },
+  ]);
+  assert.equal(clock.slept(), 1000);
+});
+
+test('open_fonthound: a frame under %APPDATA% or %LOCALAPPDATA% is handed over as a copy in %TEMP%', async () => {
+  const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
+  const frame = 'C:\\Users\\Ed\\AppData\\Local\\Remotion\\Still Frame.PNG';
+  const copies = [];
+  const fx = fakeWin();
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe || p === frame,
+    fs: { mkdir: () => {}, copyFile: (a, b) => copies.push([a, b]) }, log: quiet });
+  await s.callTool('open_fonthound', { line: 'Hi', frame_path: frame });
+  const copy = 'C:\\Users\\Ed\\AppData\\Local\\Temp\\FontHound\\claude-frame.png';
+  assert.deepEqual(copies, [[frame, copy]]);
+  assert.deepEqual(fx.started()[0].args, ['--mockup-line', 'Hi', '--mockup-frame', copy]);
+  // a frame elsewhere: no copy
+  await s.callTool('open_fonthound', { line: 'Hi', frame_path: exe.replace('fonthound.exe', 'x.png') }).catch(() => {});
+  assert.equal(copies.length, 1);
+});
+
+test('open_fonthound: FontHound never opens, so the user opens it (nothing else is tried)', async () => {
+  const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
+  const clock = fakeClock();
+  const fx = fakeWin({ ready: [false] });
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe,
+    now: clock.now, sleep: clock.sleep, timing: fast, log: quiet });
+  const r = await s.callTool('open_fonthound', { line: 'Hi there' });
+  assert.ok(!r.isError);
+  const out = JSON.parse(r.content[0].text);
+  assert.equal(out.status, 'not-opened');
+  assert.equal(out.line, 'Hi there');
+  assert.ok(out.since);
+  assert.match(out.message, /didn't open within 3 s[\s\S]*open FontHound themselves[\s\S]*wait_for_selection/);
+  // only explorer.exe: fonthound.exe is never started directly from here
+  assert.deepEqual(fx.started().map((c) => c.cmd), [EXPLORER]);
+});
+
+test('open_fonthound: a hand-over that doesn\'t finish is closed again, and the user types the line', async () => {
+  const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
+  const fx = fakeWin({ handover: 'hang' });
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe, timing: fast, log: quiet });
+  const out = JSON.parse((await s.callTool('open_fonthound', { line: 'Hi' })).content[0].text);
+  assert.equal(out.status, 'opened-without-line');
+  assert.match(out.message, /type the line on its Fonts tab[\s\S]*wait_for_selection/);
+  assert.equal(fx.started()[0].killed, true);
+  // a hand-over that fails outright says so too
+  const fx2 = fakeWin({ handover: Object.assign(new Error('boom'), { code: 3 }) });
+  const s2 = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx2.execFile, fileExists: (p) => p === exe, timing: fast, log: quiet });
+  const out2 = JSON.parse((await s2.callTool('open_fonthound', { line: 'Hi' })).content[0].text);
+  assert.equal(out2.status, 'opened-without-line');
+  assert.match(out2.message, /hand-over failed \(3\)/);
 });
 
 test('open_fonthound: FontHound not installed, bad input, macOS', async () => {
-  const fx = fakeExec({});
+  const fx = fakeWin();
   const s = createServer({ env: { LOCALAPPDATA: 'C:\\nope', ProgramFiles: 'C:\\nope' }, platform: 'win32', execFile: fx.execFile, fileExists: () => false });
   const r = await s.callTool('open_fonthound', { line: 'Hi' });
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /isn't installed[\s\S]*fonthound\.app\/download/);
-  assert.ok(!fx.calls.some((c) => c.cmd !== 'reg'), 'nothing started');
+  assert.deepEqual(fx.started(), [], 'nothing started');
   assert.equal((await s.callTool('open_fonthound', {})).isError, true);
   assert.equal((await s.callTool('open_fonthound', { line: '   ' })).isError, true);
   assert.equal((await s.callTool('open_fonthound', { line: 'x'.repeat(1001) })).isError, true);
@@ -173,12 +263,18 @@ test('open_fonthound: FontHound not installed, bad input, macOS', async () => {
   assert.match((await withExe.callTool('open_fonthound', { line: 'Hi', frame_path: path.join(dir, 'missing.png') })).content[0].text, /frame_path/);
   assert.match((await withExe.callTool('open_fonthound', { line: 'Hi', frame_path: fontFile })).content[0].text, /frame_path/);
   // macOS: open -a FontHound --args ...
-  const mx = fakeExec();
-  const mac = createServer({ env: {}, platform: 'darwin', execFile: mx.execFile });
+  const calls = [];
+  const mac = createServer({ env: {}, platform: 'darwin', execFile: (cmd, args) => { calls.push({ cmd, args }); return { unref() {} }; } });
   await mac.callTool('open_fonthound', { line: 'Hi' });
-  assert.deepEqual(mx.calls[0], { cmd: 'open', args: ['-a', 'FontHound', '--args', '--mockup-line', 'Hi'] });
+  assert.deepEqual(calls[0], { cmd: 'open', args: ['-a', 'FontHound', '--args', '--mockup-line', 'Hi'] });
   // elsewhere: a clear message
   assert.match((await createServer({ env: {}, platform: 'linux' }).callTool('open_fonthound', { line: 'Hi' })).content[0].text, /Windows/);
+});
+
+test('the server never runs a shell, PowerShell or WMI', () => {
+  const src = fs.readFileSync(SERVER, 'utf8');
+  assert.ok(!/powershell|Invoke-CimMethod|Win32_Process|cmd\.exe|shell:\s*true|\bexecSync\b|\bspawn\(|[^.]\bexec\(/i.test(src.replace(/^\s*\/\/.*$/gm, '')));
+  assert.ok(!/unlink|rmSync|rmdir/.test(src), 'deletes nothing');
 });
 
 test('wait_for_selection returns as soon as Send to AI is pressed', async () => {
@@ -291,228 +387,65 @@ test('the plugin manifest and the server agree on the version', () => {
   assert.ok(fs.readFileSync(SERVER, 'utf8').includes(`const VERSION = '${manifest.version}';`));
 });
 
-// ---------- inside the Claude desktop app's MSIX package (Windows) ----------
+// ---------- a stale private copy inside an MSIX package (Windows) ----------
 
-// The CommandLineToArgvW rules, as Rust's std::env::args applies them to the
-// arguments after the program: a reference to check the quoting against.
-function splitWindowsArgs(line) {
-  const out = [];
-  let i = 0;
-  while (i < line.length) {
-    while (line[i] === ' ' || line[i] === '\t') i++;
-    if (i >= line.length) break;
-    let cur = '';
-    let quoted = false;
-    for (; i < line.length; i++) {
-      const c = line[i];
-      if (c === '\\') {
-        let n = 0;
-        while (line[i] === '\\') { n++; i++; }
-        if (line[i] === '"') { cur += '\\'.repeat(n >> 1); if (n % 2) { cur += '"'; continue; } i--; continue; }
-        cur += '\\'.repeat(n); i--; continue;
-      }
-      if (c === '"') { if (quoted && line[i + 1] === '"') { cur += '"'; i++; } else quoted = !quoted; continue; }
-      if (!quoted && (c === ' ' || c === '\t')) break;
-      cur += c;
-    }
-    out.push(cur);
-  }
-  return out;
-}
-
-const AWKWARD = ['Hi', 'שלום עולם', 'Lemon "Season" & co', 'ends with a slash\\', 'C:\\Program Files\\FontHound\\fonthound.exe',
-  'quote at the end"', '\\"already\\" escaped', 'tab\there', 'two\nlines', '--Big Sale--', '%PATH% ^& | < > $env:X \'single\'', 'مرحبا', '日本語 テスト', ''];
-
-test('quoteWindowsArg: every argument comes back exactly (reference rules)', () => {
-  for (const a of AWKWARD) assert.deepEqual(splitWindowsArgs(quoteWindowsArg(a)), [a], JSON.stringify(a));
-  assert.equal(quoteWindowsArg('plain'), 'plain');
-  assert.equal(quoteWindowsArg('a b'), '"a b"');
-  assert.equal(quoteWindowsArg('say "hi"'), '"say \\"hi\\""');
-  assert.equal(quoteWindowsArg('dir\\'), 'dir\\');
-  assert.equal(quoteWindowsArg('my dir\\'), '"my dir\\\\"');
-  const line = windowsCommandLine('C:\\Program Files\\FontHound\\fonthound.exe', ['--mockup-line', 'Lemon "Season"', '--mockup-frame', 'C:\\Temp\\a b.png']);
-  assert.deepEqual(splitWindowsArgs(line), ['C:\\Program Files\\FontHound\\fonthound.exe', '--mockup-line', 'Lemon "Season"', '--mockup-frame', 'C:\\Temp\\a b.png']);
-});
-
-test('quoteWindowsArg: a real Windows process gets every argument exactly', { skip: process.platform !== 'win32' }, async () => {
-  const args = AWKWARD.filter((a) => a !== '');
-  const script = 'process.stdout.write(JSON.stringify(process.argv.slice(1)))';
-  // verbatim: the command line is exactly what quoteWindowsArg built
-  const child = spawn(process.execPath, ['-e', quoteWindowsArg(script), ...args.map(quoteWindowsArg)], { windowsVerbatimArguments: true, argv0: quoteWindowsArg(process.execPath) });
-  let out = '';
-  child.stdout.setEncoding('utf8');
-  child.stdout.on('data', (c) => { out += c; });
-  await new Promise((r) => child.on('close', r));
-  assert.deepEqual(JSON.parse(out), args);
-});
-
-test('the WMI script passes as one plain argument', () => {
-  assert.ok(!/["\\]/.test(WMI_SCRIPT), 'no double quotes or backslashes');
-  assert.match(WMI_SCRIPT, /Invoke-CimMethod -ClassName Win32_Process -MethodName Create/);
-  assert.match(WMI_SCRIPT, /\$env:FONTHOUND_CMDLINE/);
-});
-
-// A stand-in file system: files { path: { ino, mtimeMs } }; folders follow from them.
-function fakeFs(files, { unlinkFails = false } = {}) {
-  const calls = { stat: [], unlink: [], copy: [], mkdir: [] };
+// A stand-in file system: files { path: ino }; folders follow from them.
+function fakeFs(files) {
+  const calls = { stat: [], readdir: [] };
   const norm = (p) => p.toLowerCase();
-  const map = new Map(Object.entries(files).map(([p, v]) => [norm(p), v]));
-  const fsx = {
-    readdir: (d) => {
-      const pre = norm(d) + '\\';
-      const names = new Set();
-      for (const p of Object.keys(files)) if (norm(p).startsWith(pre)) names.add(p.slice(pre.length).split('\\')[0]);
-      if (!names.size) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-      return [...names];
-    },
-    stat: (p) => {
-      calls.stat.push(p);
-      const f = map.get(norm(p));
-      if (!f) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-      return { isFile: () => true, ino: BigInt(f.ino), dev: 7n, mtimeMs: BigInt(f.mtimeMs || 0) };
-    },
-    unlink: (p) => {
-      calls.unlink.push(p);
-      if (unlinkFails) throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
-      map.delete(norm(p));
-    },
-    copyFile: (a, b) => calls.copy.push([a, b]),
-    mkdir: (p) => calls.mkdir.push(p),
-  };
-  return { fsx, calls };
-}
-
-const L = 'C:\\Users\\Ed\\AppData\\Local';
-const R = 'C:\\Users\\Ed\\AppData\\Roaming';
-const CACHE = `${L}\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache`;
-const PRIVATE_SEL = `${CACHE}\\Roaming\\FontHound\\ai-selection.json`;
-const STARTED = Date.parse('2026-10-06T12:00:00.000Z');
-// this process sees through Claude's package: its private config.json is what %APPDATA%\Claude\config.json shows
-function claudePackage(extra = {}) {
+  const map = new Map(Object.entries(files).map(([p, v]) => [norm(p), { p, v }]));
   return {
-    [`${CACHE}\\Roaming\\Claude\\config.json`]: { ino: 11 },
-    [`${R}\\Claude\\config.json`]: { ino: 11 },
-    [`${CACHE}\\Local\\FontHound\\license.json`]: { ino: 21 },
-    [`${L}\\FontHound\\license.json`]: { ino: 21 },
-    [`${L}\\Packages\\Other.App_123\\LocalCache\\Roaming\\Thing\\a.txt`]: { ino: 31 },
-    [`${R}\\Thing\\a.txt`]: { ino: 32 },
-    ...extra,
+    calls,
+    fsx: {
+      readdir: (d) => {
+        calls.readdir.push(d);
+        const pre = norm(d) + '\\';
+        const names = new Set();
+        for (const [k, { p }] of map) if (k.startsWith(pre)) names.add(p.slice(pre.length).split('\\')[0]);
+        if (!names.size) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return [...names];
+      },
+      stat: (p) => {
+        calls.stat.push(p);
+        if (!map.has(norm(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return { isFile: () => true, ino: BigInt(map.get(norm(p)).v), dev: 7n };
+      },
+      remove: (p) => map.delete(norm(p)),
+    },
   };
 }
-const pkgEnv = { APPDATA: R, LOCALAPPDATA: L, TEMP: `${L}\\Temp`, SystemRoot: 'C:\\Windows' };
-const quiet = () => {};
+const L = WIN.LOCALAPPDATA;
+const R = WIN.APPDATA;
+const PRIVATE_SEL = L + '\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\FontHound\\ai-selection.json';
+const REAL_SEL = R + '\\FontHound\\ai-selection.json';
 
-test('inside the package: a stale private ai-selection.json is removed, and the result says so', async () => {
-  const { fsx, calls } = fakeFs(claudePackage({
-    [PRIVATE_SEL]: { ino: 41, mtimeMs: Date.parse('2026-10-05T12:47:00.000Z') },
-    [`${R}\\FontHound\\ai-selection.json`]: { ino: 41, mtimeMs: Date.parse('2026-10-05T12:47:00.000Z') }, // the real path shows the private copy
-  }));
-  const s = createServer({ env: pkgEnv, platform: 'win32', fs: fsx, startedAt: STARTED, log: quiet });
-  assert.equal(s.packageCache(), CACHE);
-  const r = JSON.parse((await s.callTool('get_font_selection', {})).content[0].text);
-  assert.deepEqual(calls.unlink, [PRIVATE_SEL]);
-  assert.equal(r.notes.length, 1);
-  assert.match(r.notes[0], /Removed a stale copy[\s\S]*Claude_pzs8sxrjxfjjc/);
-  // said once
-  assert.equal(JSON.parse((await s.callTool('get_font_selection', {})).content[0].text).notes, undefined);
-  // license.json: never even looked at, never touched
-  assert.ok(!calls.stat.some((p) => /license\.json/i.test(p)), calls.stat.join('\n'));
-  assert.ok(!calls.unlink.some((p) => /license\.json/i.test(p)));
-});
-
-test('inside the package: a private copy written since the server started stays (a FontHound open inside it)', async () => {
-  const { fsx, calls } = fakeFs(claudePackage({ [PRIVATE_SEL]: { ino: 41, mtimeMs: STARTED + 5000 } }));
-  const s = createServer({ env: pkgEnv, platform: 'win32', fs: fsx, startedAt: STARTED, log: quiet });
-  const r = JSON.parse((await s.callTool('get_font_selection', {})).content[0].text);
-  assert.deepEqual(calls.unlink, []);
-  assert.equal(r.notes, undefined);
-});
-
-test('outside any package: another package\'s copy is not ours to remove', async () => {
-  const files = claudePackage({ [PRIVATE_SEL]: { ino: 41, mtimeMs: 1 } });
-  files[`${R}\\Claude\\config.json`] = { ino: 12 }; // the real file, not the private one
-  const { fsx, calls } = fakeFs(files);
-  const s = createServer({ env: pkgEnv, platform: 'win32', fs: fsx, startedAt: STARTED, log: quiet });
-  assert.equal(s.packageCache(), null);
-  await s.callTool('get_font_selection', {});
-  assert.deepEqual(calls.unlink, []);
-  // macOS, and a test file override: never looked for
-  const mac = createServer({ env: pkgEnv, platform: 'darwin', fs: fakeFs(claudePackage()).fsx });
-  assert.equal(mac.packageCache(), null);
-});
-
-test('inside the package: a private copy that can\'t be removed is reported once, with its path', async () => {
-  const { fsx, calls } = fakeFs(claudePackage({ [PRIVATE_SEL]: { ino: 41, mtimeMs: 1 } }), { unlinkFails: true });
-  const s = createServer({ env: pkgEnv, platform: 'win32', fs: fsx, startedAt: STARTED, log: quiet });
-  const r = JSON.parse((await s.callTool('get_font_files', {})).content[0].text);
-  assert.match(r.notes[0], /couldn't be removed \(EPERM\)[\s\S]*delete this file/);
-  assert.ok(r.notes[0].includes(PRIVATE_SEL));
-  const again = JSON.parse((await s.callTool('get_font_files', {})).content[0].text);
-  assert.equal(again.notes, undefined);
-  assert.equal(calls.unlink.length, 1);
-});
-
-// a stand-in execFile for the package case: answers reg, records PowerShell
-function fakeWmi(answer) {
-  const calls = [];
-  const execFile = (cmd, args, opts, cb) => {
-    calls.push({ cmd, args, opts });
-    if (cmd === 'reg') setImmediate(() => cb(new Error('not found')));
-    else setImmediate(() => answer(cb));
-    return { unref() {} };
-  };
-  return { calls, execFile };
-}
-
-test('open_fonthound inside the package starts FontHound through WMI, outside it', async () => {
-  const exe = `${pkgEnv.SystemRoot}\\..\\Program Files\\FontHound\\fonthound.exe`;
-  const frame = 'D:\\clips\\still frame.PNG';
-  const { fsx, calls: fcalls } = fakeFs(claudePackage());
-  const w = fakeWmi((cb) => cb(null, '0 4242', ''));
-  const s = createServer({ env: { ...pkgEnv, FONTHOUND_EXE: exe }, platform: 'win32', fs: fsx, execFile: w.execFile,
-    fileExists: (p) => p === exe || p === frame, startedAt: STARTED, log: quiet });
-  const line = 'שלום "עולם" C:\\dir\\';
-  const r = JSON.parse((await s.callTool('open_fonthound', { line, frame_path: frame })).content[0].text);
-  assert.equal(r.status, 'opened');
-  assert.match(r.message, /wait_for_selection/);
-  const ps = w.calls.find((c) => c.cmd !== 'reg');
-  assert.equal(ps.cmd, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
-  assert.deepEqual(ps.args, ['-NoProfile', '-NonInteractive', '-Command', WMI_SCRIPT]);
-  // the frame goes through %TEMP%, which the package doesn't hide
-  const copy = `${L}\\Temp\\FontHound\\claude-frame.png`;
-  assert.deepEqual(fcalls.copy, [[frame, copy]]);
-  assert.deepEqual(splitWindowsArgs(ps.opts.env.FONTHOUND_CMDLINE), [exe, '--mockup-line', line, '--mockup-frame', copy]);
-  assert.equal(ps.opts.env.FONTHOUND_CWD, `${pkgEnv.SystemRoot}\\..\\Program Files\\FontHound`);
-  assert.ok(ps.opts.timeout > 0);
-  // fonthound.exe itself is never started from in here
-  assert.ok(!w.calls.some((c) => c.cmd === exe));
-});
-
-test('open_fonthound inside the package: WMI refuses, so the user opens FontHound', async () => {
-  const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
-  for (const answer of [(cb) => cb(null, '9 0', ''), (cb) => cb(new Error('spawn powershell ENOENT'), '', '')]) {
-    const w = fakeWmi(answer);
-    const s = createServer({ env: { ...pkgEnv, FONTHOUND_EXE: exe }, platform: 'win32', fs: fakeFs(claudePackage()).fsx, execFile: w.execFile,
-      fileExists: (p) => p === exe, startedAt: STARTED, log: quiet });
-    const r = await s.callTool('open_fonthound', { line: 'Hi there' });
-    assert.ok(!r.isError);
-    const out = JSON.parse(r.content[0].text);
-    assert.equal(out.status, 'not-opened');
-    assert.equal(out.line, 'Hi there');
-    assert.ok(out.since);
-    assert.match(out.message, /open FontHound themselves[\s\S]*wait_for_selection/);
-    assert.ok(!w.calls.some((c) => c.cmd === exe), 'no fallback to starting it inside the package');
+test('a stale private copy is reported with its path, never deleted', async () => {
+  // inside the package the real path shows the private copy: the same file
+  const { fsx, calls } = fakeFs({ [PRIVATE_SEL]: 41, [REAL_SEL]: 41, [L + '\\Packages\\Other.App_1\\LocalCache\\Roaming\\Thing\\a.txt']: 5 });
+  const s = createServer({ env: WIN, platform: 'win32', fs: fsx, log: quiet });
+  for (const tool of ['get_font_selection', 'get_font_files', 'wait_for_selection']) {
+    const out = JSON.parse((await s.callTool(tool, { timeout_s: 1 })).content[0].text);
+    assert.equal(out.status, 'stale-copy', tool);
+    assert.equal(out.file, PRIVATE_SEL);
+    assert.match(out.message, /old copy[\s\S]*Ask the user to delete this one file/);
+    assert.ok(out.message.includes(PRIVATE_SEL));
   }
+  // only FontHound's own file name was looked at in each package, and the package list read once
+  assert.equal(calls.readdir.length, 1);
+  assert.ok(calls.stat.every((p) => /FontHound\\ai-selection\.json$/i.test(p)), calls.stat.join('\n'));
+  // once the user deleted it: back to normal (here the file is simply gone)
+  fsx.remove(PRIVATE_SEL);
+  fsx.remove(REAL_SEL);
+  assert.equal(JSON.parse((await s.callTool('get_font_selection', {})).content[0].text).status, 'no-selection');
 });
 
-test('open_fonthound outside a package still starts fonthound.exe directly', async () => {
-  const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
-  const files = claudePackage();
-  files[`${R}\\Claude\\config.json`] = { ino: 12 };
-  const fx = fakeExec();
-  const s = createServer({ env: { ...pkgEnv, FONTHOUND_EXE: exe }, platform: 'win32', fs: fakeFs(files).fsx, execFile: fx.execFile, fileExists: (p) => p === exe });
-  await s.callTool('open_fonthound', { line: 'Hi' });
-  assert.deepEqual(fx.calls, [{ cmd: exe, args: ['--mockup-line', 'Hi'] }]);
+test('no stale copy: outside the package the copy is a different file; macOS and the test override never look', () => {
+  const { fsx } = fakeFs({ [PRIVATE_SEL]: 41, [REAL_SEL]: 42 });
+  assert.equal(createServer({ env: WIN, platform: 'win32', fs: fsx }).staleCopy(), null);
+  const watched = fakeFs({ [PRIVATE_SEL]: 41, [REAL_SEL]: 41 });
+  assert.equal(createServer({ env: WIN, platform: 'darwin', fs: watched.fsx }).staleCopy(), null);
+  assert.equal(createServer({ env: { ...WIN, FONTHOUND_SELECTION_FILE: selFile }, platform: 'win32', fs: watched.fsx }).staleCopy(), null);
+  assert.equal(watched.calls.readdir.length, 0);
 });
 
 test('wait_for_selection sends progress while it waits, and its timeout says how to go on', async () => {

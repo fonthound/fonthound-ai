@@ -1,57 +1,82 @@
 # FontHound AI
 
-Your AI can make your video. The font should still be your call.
+Pick the fonts for your video titles by eye, in your own installed fonts, and
+have Claude use exactly those fonts and that look when it builds the video.
 
-FontHound AI connects your AI tools (Claude Code, Claude Desktop, Cursor, VS Code, Codex CLI, Gemini CLI, Windsurf and any app that supports MCP) to [FontHound](https://fonthound.app), the font
-browser for video editors. When you ask Claude for a video, an intro, titles or a
-promo (Remotion, HTML, ffmpeg, Pillow...), Claude asks whether you want to pick
-the fonts yourself. If you do, it opens FontHound with your title already typed
-in. You see the line in every font on your computer, Adobe Fonts included, put
-your favourites on a frame of your video, set the size, colour, tracking, stroke,
+This plugin connects Claude Code (and other AI apps that support MCP) to
+[FontHound](https://fonthound.app), a font browser for video editors on Windows.
+When you ask Claude for a video, an intro, titles or a promo (Remotion, HTML,
+ffmpeg, Pillow...), Claude asks once whether you want to pick the fonts
+yourself. If you do, it opens FontHound with your title already typed in. You
+see the line in every font on your computer, Adobe Fonts included, put your
+favourites on a frame of your video, set the size, colour, tracking, stroke,
 shadow and box, and press **Send to AI**. Claude then builds the video with
 exactly those fonts and that look: the exact PostScript names, the font files,
-the sizes in pixels of your frame. It never swaps in another font.
+the sizes in pixels of your frame. It never swaps in another font. If you'd
+rather Claude chose, say so and it won't ask again in that project.
 
 Claude may suggest a direction in words ("a warm serif would suit a restaurant
-promo"), but you pick the actual fonts by eye. The plugin has no tool that lists
-every installed font and no tool that recommends fonts.
+promo"), but you pick the actual fonts. The plugin has no tool that lists every
+installed font and no tool that recommends fonts.
+
+## Requirements
+
+- **FontHound for Windows** on the same computer, licensed or in its trial
+  (free 14-day trial, no card: https://fonthound.app/download). FontHound is a
+  paid app ($9.90 a year after the trial); this plugin is free. A macOS version
+  of FontHound is coming; until then the plugin's tools only open FontHound on
+  Windows.
+- **Node.js** (the local server is one plain JavaScript file with no
+  dependencies; Claude Code users usually have Node already).
 
 ## What's inside
 
-- **Skill `fonthound`**: tells Claude when to offer FontHound, how to read your
-  selection, and how to load the fonts (CSS `local()`, `@font-face` with the file,
-  Remotion, ffmpeg `drawtext`, Pillow), never substituting a font.
-- **A small local MCP server** (`server/fonthound-mcp.js`, plain Node.js, no
-  dependencies) with four tools:
+- **Skill `fonthound`**: tells Claude when to offer FontHound (once per project),
+  how to read your selection, and how to load the fonts (CSS `local()`,
+  `@font-face` with the file, Remotion, ffmpeg `drawtext`, Pillow), never
+  substituting a font.
+- **A small local MCP server** (`server/fonthound-mcp.js`, readable Node.js, no
+  dependencies, started as `node ${CLAUDE_PLUGIN_ROOT}/server/fonthound-mcp.js`)
+  with four tools:
   - `get_font_selection`: the fonts you sent from FontHound and their look;
-  - `get_font_files`: each font's file and whether it exists;
-  - `open_fonthound`: opens FontHound on its Fonts tab with your title (and optionally a
-    still from your video);
+  - `get_font_files`: each picked font's file and whether it exists;
+  - `open_fonthound`: opens FontHound on its Fonts tab with your title (and
+    optionally a still from your video);
   - `wait_for_selection`: waits until you press Send to AI (5 minutes at a
-    time, then Claude checks in and waits again; a Send that lands as the wait
-    ends still counts).
+    time, then Claude checks in and waits again).
 
 If a picked font looks like a trial, demo or personal-use file (from its file
 name or its name table), the selection says so (`licenseHint`) and Claude
 mentions it once; nothing is blocked.
 
+## Examples
+
+1. "Make a 10-second Remotion intro that says **Lemon Season**." Claude asks
+   whether you want to pick the fonts in FontHound, opens it with "Lemon Season"
+   typed in, waits for Send to AI, then renders the intro in your fonts.
+2. "Add lower thirds with the speaker's name to this clip with ffmpeg; I'll pick
+   the font." Claude renders a still of the clip, opens FontHound with the name
+   over that still, and uses the font file you picked in `drawtext`.
+3. After pressing Send to AI yourself: "Use my FontHound fonts for the title
+   card in this HTML page." Claude reads the selection and writes the CSS with
+   the exact family, weight, size, colour and stroke.
+
 ## Install
 
-You need **FontHound** installed on the same computer, licensed or in its trial
-(free 14-day trial: https://fonthound.app/download), and Node.js (Claude Code
-users usually have it). FontHound runs on Windows; macOS is coming.
+### Claude Code
 
-### Claude Code (recommended: Claude offers FontHound by itself)
+From Claude's plugin directory: open `/plugin`, find **FontHound**, install.
+Plugins from the directory update automatically.
 
-In Claude Code in a terminal:
+Or from this repository, in Claude Code in a terminal:
 
 ```
 /plugin marketplace add fonthound/fonthound-ai
 /plugin install fonthound@fonthound
 ```
 
-**In the Claude desktop app**, the `/plugin` command needs Claude Code's
-interactive terminal, so install from a terminal instead (Command Prompt,
+In the Claude desktop app, the `/plugin` command needs Claude Code's
+interactive terminal, so run these in a terminal instead (Command Prompt,
 PowerShell or Terminal), then start a new session in the app:
 
 ```
@@ -59,21 +84,20 @@ claude plugin marketplace add fonthound/fonthound-ai
 claude plugin install fonthound@fonthound
 ```
 
-**Turn on updates** (once): third-party plugin sources don't update on their
-own. Run `/plugin`, open **Marketplaces**, choose **fonthound** and switch on
-**auto-update**; new versions then arrive when Claude starts. To update by hand:
+### Updating
+
+Installed from the directory: updates arrive by themselves. Installed from this
+repository: run `/plugin`, open **Marketplaces**, choose **fonthound** and
+switch on **auto-update** once; or update by hand with
 `claude plugin marketplace update fonthound` then
 `claude plugin update fonthound@fonthound`, and restart Claude.
 
-Then ask for a video, for example "Make a 10-second Remotion intro that says
-Lemon Season", or say "use my FontHound fonts" after pressing Send to AI.
-
 ### Other AI apps (MCP)
 
-The same local server works in any app that supports MCP. Download this repository
-(Code → Download ZIP, or `git clone https://github.com/fonthound/fonthound-ai`), put
-it somewhere permanent, and point the app at `server/fonthound-mcp.js`. Replace
-`PATH` below with that folder (on Windows use forward slashes, e.g.
+The same local server works in any app that supports MCP. Download this
+repository (Code → Download ZIP, or `git clone https://github.com/fonthound/fonthound-ai`),
+put it somewhere permanent, and point the app at `server/fonthound-mcp.js`.
+Replace `PATH` below with that folder (on Windows use forward slashes, e.g.
 `C:/Tools/fonthound-ai`). Then ask: "Use the fonts I picked in FontHound."
 
 **Claude Desktop** (Settings → Developer → Edit Config, `claude_desktop_config.json`),
@@ -107,44 +131,52 @@ command = "node"
 args = ["PATH/server/fonthound-mcp.js"]
 ```
 
-Only Claude Code uses the skill, so only there does the AI offer FontHound on its
-own; elsewhere, ask for your FontHound fonts. The tools are the same everywhere.
+Only Claude Code uses the skill, so only there does Claude offer FontHound on
+its own; elsewhere, ask for your FontHound fonts. The tools are the same.
 
-### Chat apps without MCP (ChatGPT, web chats)
+### Chat apps without MCP
 
-Press **Send to AI** in FontHound and paste. The copied text has the exact names,
-files and look.
+Press **Send to AI** in FontHound and paste. The copied text has the exact
+names, files and look.
 
-## How it works, and privacy
+## What it reads, writes and runs (privacy)
 
-Everything stays on your computer. Nothing is uploaded and nothing goes over the
-network.
+Everything stays on your computer. The plugin sends nothing over the network,
+collects nothing, and reads nothing from your conversations.
 
-- When you change the Mockup or press **Send to AI**, FontHound writes your
-  selection to one file:
-  - Windows: `%APPDATA%\FontHound\ai-selection.json`
-  - macOS: `~/Library/Application Support/FontHound/ai-selection.json`
+- **Reads one file.** When you change the Mockup or press **Send to AI**,
+  FontHound writes your selection to
+  `%APPDATA%\FontHound\ai-selection.json` (macOS:
+  `~/Library/Application Support/FontHound/ai-selection.json`). It holds the
+  title line, the frame size, and for each option the font's names, its file
+  path and the look. The server reads that file and checks whether the picked
+  font files exist. FontHound deletes the file when you empty the Mockup, and
+  writes it only while it is licensed or in its trial.
+- **Runs FontHound, and only when Claude calls `open_fonthound`.** On Windows,
+  if FontHound isn't open, the server asks the Windows shell to open
+  `fonthound.exe` (it runs `explorer.exe` with the program's path, exactly like
+  a double-click), waits until FontHound's window is there (it checks with
+  Windows' `tasklist.exe`), then runs `fonthound.exe --mockup-line "<your title>"
+  [--mockup-frame "<image>"]`, which hands the line to the open FontHound and
+  exits. `fonthound.exe` is found through FontHound's own registry entry
+  (`reg.exe query`). On a Mac: `open -a FontHound --args ...`. No shell, no
+  PowerShell, no scripts: each program is started directly with plain
+  arguments.
 
-  It holds the title line, the frame size, and for each option the font's names,
-  its file path, and the look. FontHound deletes the file when you empty the
-  Mockup. The app, the After Effects / Premiere Pro panel and the DaVinci Resolve
-  plugin all write the same file (the last one wins). It's only written while
-  FontHound is licensed or in its trial.
-- The MCP server only reads that file, checks whether the chosen font files exist,
-  and starts FontHound (`fonthound.exe --mockup-line "<your title>"
-  [--mockup-frame "<image>"]`, found through FontHound's own registry entry; on a
-  Mac `open -a FontHound --args ...`). It runs no shell and writes nothing,
-  with one exception for the Claude desktop app on Windows, below.
-- **The Claude desktop app on Windows** is a packaged (MSIX) app: programs it
-  starts see a private copy of `%APPDATA%` and `%LOCALAPPDATA%`. A FontHound
-  started from there would keep its own selection and its own licence in that
-  private copy. So there the server starts FontHound through Windows' own WMI
-  service (one PowerShell command, `Invoke-CimMethod Win32_Process Create`),
-  which runs it as a normal app; a frame image is copied to
-  `%TEMP%\FontHound\claude-frame.<ext>` so FontHound can see it. If an older
-  version of the plugin left a private copy of `ai-selection.json` in
-  `%LOCALAPPDATA%\Packages\Claude_...\LocalCache\Roaming\FontHound\`, the server
-  deletes that one file (it hides the real one) and says so. It never touches
+  Why the shell: the Claude desktop app on Windows is a packaged (MSIX) app,
+  and programs it starts see a private copy of `%APPDATA%` and
+  `%LOCALAPPDATA%`. A FontHound started directly from there would keep its
+  selection and its licence in that private copy. Opened by the Windows shell,
+  it runs as a normal app.
+- **Writes almost nothing.** If the still frame you pass lives under
+  `%APPDATA%` or `%LOCALAPPDATA%`, the server copies it to
+  `%TEMP%\FontHound\claude-frame.<ext>` so FontHound can see it. It writes
+  nothing else and deletes nothing.
+- **An old private copy.** Version 0.1.2 and earlier of this plugin could leave
+  a private copy of `ai-selection.json` in the Claude app's storage
+  (`%LOCALAPPDATA%\Packages\Claude_...\LocalCache\Roaming\FontHound\`), which
+  hides the real one from Claude. If the server finds one, it tells you where it
+  is so you can delete it; it never deletes it itself. It never looks at
   licence files.
 - File paths contain your Windows account name; they're only in that local file
   and in the text Send to AI puts on your clipboard, never in images FontHound
@@ -154,8 +186,20 @@ network.
   computer. For cloud rendering, fonts must be uploaded: check your fonts'
   licences; Adobe Fonts can't be uploaded.
 
-Without the plugin, Send to AI still copies the same information as Markdown;
-paste it into any AI tool.
+FontHound's privacy policy: https://fonthound.app/privacy.html
+
+## Troubleshooting
+
+- **"FontHound isn't installed"**: install FontHound (free trial at
+  https://fonthound.app/download), then ask again.
+- **FontHound opens but without your title** (`opened-without-line`): type the
+  title on the Fonts tab yourself; everything else works the same.
+- **FontHound doesn't open** (`not-opened`): open it from the Start menu, type
+  the title, pick, press Send to AI; Claude is waiting for it.
+- **Claude never sees your Send to AI**: make sure FontHound is licensed or in
+  its trial. If Claude says an old copy hides your selection, delete the file it
+  names and try again.
+- Support: support@fonthound.app
 
 ## Tests
 
@@ -168,6 +212,10 @@ node --test
 
 ## Changes
 
+- **0.1.5**: FontHound is opened by the Windows shell instead of PowerShell/WMI,
+  and the line is handed to it through FontHound's own single-instance
+  hand-over; the server no longer deletes anything (an old private copy of the
+  selection is reported with its path instead); clearer statuses and messages.
 - **0.1.4**: when you send more than one font, Claude asks how to use them instead of taking the first.
 - **0.1.3**: in the Claude desktop app on Windows, Send to AI always arrives and
   FontHound opened from Claude keeps your licence: FontHound now starts outside
@@ -178,5 +226,4 @@ node --test
 
 ## Licence
 
-MIT. FontHound itself is a paid app ($9.90 a year after a 14-day free trial);
-this plugin is free. Support: support@fonthound.app.
+MIT. Support: support@fonthound.app.

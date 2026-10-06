@@ -1,8 +1,8 @@
 {
   "name": "fonthound",
   "displayName": "FontHound",
-  "version": "0.1.4",
-  "description": "Use the fonts you picked by eye in FontHound, exactly, in videos your AI makes with Remotion, HTML, ffmpeg or Pillow. Local only.",
+  "version": "0.1.5",
+  "description": "Pick your video title fonts by eye in FontHound (Windows app, free trial), then Claude uses exactly those fonts and that look in videos made with Remotion, HTML, ffmpeg or Pillow. Local only.",
   "author": {
     "name": "FontHound",
     "email": "support@fonthound.app",
@@ -15,9 +15,10 @@
     "fonts",
     "typography",
     "video",
-    "remotion",
     "titles",
-    "motion-graphics"
+    "remotion",
+    "motion-graphics",
+    "windows"
   ],
   "documentationUrl": "https://github.com/fonthound/fonthound-ai",
   "supportUrl": "https://fonthound.app",

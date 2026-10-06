@@ -43,8 +43,13 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
 4. If `open_fonthound` says FontHound isn't installed, tell the user (free 14-day
    trial at https://fonthound.app/download) and ask whether you should choose instead.
    If it returns `status: "not-opened"`, ask the user to open FontHound from the
-   Start menu and type the title on its Fonts tab, then wait as in step 3.
-5. If a result carries `notes`, pass them on to the user in a sentence.
+   Start menu and type the title on its Fonts tab, then wait as in step 3. If it
+   returns `status: "opened-without-line"`, FontHound is open: ask the user to
+   type the title on its Fonts tab, then wait as in step 3.
+5. If a result has `status: "stale-copy"` (or a `warning`), an old copy of the
+   selection left by an earlier version of this plugin hides the real one. Tell
+   the user in a sentence and ask them to delete the one file named in the
+   message (or delete it for them if they say yes), then try again.
 
 ## 3. Use the selection exactly
 
