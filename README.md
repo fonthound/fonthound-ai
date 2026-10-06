@@ -168,6 +168,7 @@ node --test
 
 ## Changes
 
+- **0.1.4**: when you send more than one font, Claude asks how to use them instead of taking the first.
 - **0.1.3**: in the Claude desktop app on Windows, Send to AI always arrives and
   FontHound opened from Claude keeps your licence: FontHound now starts outside
   the app's private storage, and a stale private selection left by 0.1.2 is

@@ -285,8 +285,10 @@ test('a licence hint passes through to Claude untouched', async () => {
 
 test('the plugin manifest and the server agree on the version', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8'));
-  assert.equal(manifest.version, '0.1.3');
-  assert.match(fs.readFileSync(SERVER, 'utf8'), /const VERSION = '0\.1\.3';/);
+  const market = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'marketplace.json'), 'utf8'));
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(market.plugins[0].version, manifest.version);
+  assert.ok(fs.readFileSync(SERVER, 'utf8').includes(`const VERSION = '${manifest.version}';`));
 });
 
 // ---------- inside the Claude desktop app's MSIX package (Windows) ----------

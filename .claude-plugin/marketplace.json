@@ -10,7 +10,7 @@
       "name": "fonthound",
       "source": "./",
       "description": "Use the fonts you picked by eye in FontHound, exactly, in the videos Claude makes.",
-      "version": "0.1.3"
+      "version": "0.1.4"
     }
   ]
 }

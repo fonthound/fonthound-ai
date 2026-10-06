@@ -42,7 +42,7 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.1.3';
+const VERSION = '0.1.4';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const DOWNLOAD = 'https://fonthound.app/download';
 const NO_SELECTION = 'No FontHound selection yet. Ask the user to open FontHound, put the fonts they like in the Mockup and press "Send to AI", then try again.';

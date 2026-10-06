@@ -52,8 +52,13 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
 
 - `line`, `direction` (`rtl` for Hebrew/Arabic), `frame` (`width`, `height`: the
   frame the look was designed on; px values are in its pixels).
-- `fonts[]`, options 1-5 in the user's order. Option 1 is the default; use other
-  options only where the user says so (or ask). Each has `family`, `style`,
+- `fonts[]`, options 1-5 in the user's order. **One option: use it. Two or more:
+  don't pick one yourself.** The user sent several on purpose (to compare, or for
+  different parts), so ask before rendering, listing them by number and name, e.g.
+  "You sent 3 fonts: 1 Abril Fatface, 2 Adobe Gothic Std B, 3 Adobe Heiti Std R.
+  Use one for everything (which?), split them (e.g. 1 for the title, 2 for the
+  subtitle), or should I make a version with each?" Skip the question only when
+  the user already said how to use them. Each has `family`, `style`,
   `postscriptName`, `fullName`, `weight`, `italic`, `stretch`, `css`, `file`
   (absolute path, or null), `source` (`installed`, `adobe-fonts`, `not-installed`),
   `note`, sometimes `licenseHint` (see below), and `look`: `sizePx`,
