@@ -27,8 +27,9 @@ every installed font and no tool that recommends fonts.
   - `get_font_files`: each font's file and whether it exists;
   - `open_fonthound`: opens FontHound on its Fonts tab with your title (and optionally a
     still from your video);
-  - `wait_for_selection`: waits until you press Send to AI (up to 20 minutes;
-    a Send that lands as the wait ends still counts).
+  - `wait_for_selection`: waits until you press Send to AI (5 minutes at a
+    time, then Claude checks in and waits again; a Send that lands as the wait
+    ends still counts).
 
 If a picked font looks like a trial, demo or personal-use file (from its file
 name or its name table), the selection says so (`licenseHint`) and Claude
@@ -126,7 +127,19 @@ network.
 - The MCP server only reads that file, checks whether the chosen font files exist,
   and starts FontHound (`fonthound.exe --mockup-line "<your title>"
   [--mockup-frame "<image>"]`, found through FontHound's own registry entry; on a
-  Mac `open -a FontHound --args ...`). It runs no shell and writes nothing.
+  Mac `open -a FontHound --args ...`). It runs no shell and writes nothing,
+  with one exception for the Claude desktop app on Windows, below.
+- **The Claude desktop app on Windows** is a packaged (MSIX) app: programs it
+  starts see a private copy of `%APPDATA%` and `%LOCALAPPDATA%`. A FontHound
+  started from there would keep its own selection and its own licence in that
+  private copy. So there the server starts FontHound through Windows' own WMI
+  service (one PowerShell command, `Invoke-CimMethod Win32_Process Create`),
+  which runs it as a normal app; a frame image is copied to
+  `%TEMP%\FontHound\claude-frame.<ext>` so FontHound can see it. If an older
+  version of the plugin left a private copy of `ai-selection.json` in
+  `%LOCALAPPDATA%\Packages\Claude_...\LocalCache\Roaming\FontHound\`, the server
+  deletes that one file (it hides the real one) and says so. It never touches
+  licence files.
 - File paths contain your Windows account name; they're only in that local file
   and in the text Send to AI puts on your clipboard, never in images FontHound
   exports.
@@ -146,6 +159,15 @@ node --test
 
 `FONTHOUND_SELECTION_FILE` and `FONTHOUND_EXE` point the server at other paths
 (the tests use them).
+
+## Changes
+
+- **0.1.3**: in the Claude desktop app on Windows, Send to AI always arrives and
+  FontHound opened from Claude keeps your licence: FontHound now starts outside
+  the app's private storage, and a stale private selection left by 0.1.2 is
+  removed. `wait_for_selection` waits 5 minutes at a time and shows progress.
+- **0.1.2**: opened from Claude, FontHound starts on its Fonts tab with your line.
+- **0.1.1**: Windows font names in Send to AI, trial-font hints.
 
 ## Licence
 

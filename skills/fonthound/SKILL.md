@@ -35,13 +35,16 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
 2. Tell the user: "FontHound is open with your title in every font. Add the ones
    you like to the Mockup (+), adjust the look there, and press **Send to AI**."
 3. Call `wait_for_selection` with the `since` that `open_fonthound` returned
-   (leave `timeout_s` out: it waits up to 20 minutes). When it returns
+   (leave `timeout_s` out: it waits 5 minutes). When it returns
    `status: "timeout"`, call `get_font_selection` first: if its selection's
-   `sent` is after `since`, the user sent it meanwhile, so use it. Otherwise ask
-   the user whether they're done, then call `wait_for_selection` again with the
-   same `since`.
+   `sent` is after `since`, the user sent it meanwhile, so use it. Otherwise tell
+   the user you're still waiting for **Send to AI** (or ask whether they're done),
+   then call `wait_for_selection` again with the same `since`.
 4. If `open_fonthound` says FontHound isn't installed, tell the user (free 14-day
    trial at https://fonthound.app/download) and ask whether you should choose instead.
+   If it returns `status: "not-opened"`, ask the user to open FontHound from the
+   Start menu and type the title on its Fonts tab, then wait as in step 3.
+5. If a result carries `notes`, pass them on to the user in a sentence.
 
 ## 3. Use the selection exactly
 
