@@ -212,6 +212,7 @@ node --test
 
 ## Changes
 
+- **0.1.6**: works with OpenMontage (your picks go into its Remotion and HyperFrames renders, loaded from the font files); clearer rules for Pillow and ffmpeg.
 - **0.1.5**: FontHound is opened by the Windows shell instead of PowerShell/WMI,
   and the line is handed to it through FontHound's own single-instance
   hand-over; the server no longer deletes anything (an old private copy of the

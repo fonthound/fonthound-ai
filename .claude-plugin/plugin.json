@@ -1,7 +1,7 @@
 {
   "name": "fonthound",
   "displayName": "FontHound",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Pick your video title fonts by eye in FontHound (Windows app, free trial), then Claude uses exactly those fonts and that look in videos made with Remotion, HTML, ffmpeg or Pillow. Local only.",
   "author": {
     "name": "FontHound",

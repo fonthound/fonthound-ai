@@ -10,7 +10,7 @@
       "name": "fonthound",
       "source": "./",
       "description": "Pick your video title fonts by eye in FontHound; Claude uses exactly those fonts.",
-      "version": "0.1.5"
+      "version": "0.1.6"
     }
   ]
 }

@@ -82,8 +82,9 @@ Rules:
   still exists.
 - **Adobe Fonts (`source: "adobe-fonts"`) have no file:** load them by name only
   (CSS `local()`); they work in renders on this computer. Never copy or upload
-  Creative Cloud's font files. If a tool can only take a file (ffmpeg, Pillow),
-  say so and offer an HTML/Remotion render instead.
+  Creative Cloud's font files. ffmpeg's `subtitles`/ASS filter also takes a font
+  by name (`force_style='FontName=…'`). If a tool can only take a file (ffmpeg
+  `drawtext`, Pillow), say so and offer an HTML/Remotion render instead.
 - **`not-installed`:** a free Google font the user previewed without installing.
   Ask them to install it (FontHound > Get fonts) or load it from Google Fonts.
 - **`licenseHint`** (`trial`, `demo`, `personal-use` or `non-commercial`): the
@@ -149,7 +150,32 @@ font = ImageFont.truetype(r"C:\Users\me\AppData\Local\Microsoft\Windows\Fonts\Jo
 ```
 
 For Hebrew or Arabic (`direction: "rtl"`), set `direction: rtl` in CSS; in Pillow
-use `layout_engine=ImageFont.Layout.RAQM` where available.
+use `layout_engine=ImageFont.Layout.RAQM`, but only if
+`PIL.features.check("raqm")` is true (the usual Windows wheels lack it and draw
+RTL text backwards): otherwise render the text with HTML or ffmpeg `drawtext`.
+
+Whatever the tool, don't hand the pick to a template only as a theme or
+`font-family` name: templates often hardcode their own fonts, or force
+`font-weight: 700` (faux bold on a Regular). Check a rendered frame.
+
+### OpenMontage
+
+If the project uses OpenMontage (it has `AGENT_GUIDE.md`, `pipeline_defs/` and
+`remotion-composer/`), the user's pick is the typography of the proposal's visual
+identity: ask the FontHound question there, before the playbook is chosen. Then:
+
+- Its stock scenes (`text_card`, `hero_title`, the HyperFrames scaffold's text
+  card) ignore the theme's fonts or fake the weight, so put text in the picked
+  fonts in an **atelier** composition (`composition_mode: "atelier"`), Remotion
+  or HyperFrames, and say why when you propose it.
+- Load the picks with the `@font-face` recipe above, not with
+  `@remotion/google-fonts`. If you add the file to `url()`, copy it into that
+  project's own folder (Remotion: the per-project `public_dir`, `staticFile()`;
+  HyperFrames: the workspace, a relative `url()`). Adobe Fonts: `local()` only.
+- Also set the playbook's `typography` to the picked family, so its DESIGN.md
+  and reviews name the right font.
+- Its typography guide and playbooks suggest fonts (Inter, Space Grotesk…).
+  They apply only when the user asked you to choose.
 
 ## 4. Without the MCP tools
 
