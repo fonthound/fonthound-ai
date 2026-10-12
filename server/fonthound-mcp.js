@@ -15,7 +15,7 @@
 // Tools:
 //   get_font_selection  the selection (names, PostScript names, files, look)
 //   get_font_files      each chosen font's file and whether it exists
-//   open_fonthound      opens FontHound on its Fonts tab with the user's title line
+//   open_fonthound      opens FontHound on its Fonts tab with the user's text
 //   wait_for_selection  waits until the user presses "Send to AI"
 // Deliberately absent: a list of every installed font, and any tool that
 // picks or recommends fonts. The user picks; the AI uses what was picked.
@@ -28,16 +28,23 @@
 // The Claude desktop app on Windows is an MSIX package. Everything it starts
 // (this server, and a FontHound started directly from here) gets the
 // package's file virtualization: writes under %APPDATA% and %LOCALAPPDATA%
-// land in %LOCALAPPDATA%\Packages\<package>\LocalCache\..., and reads
-// prefer that private copy (%TEMP% is not virtualized). A FontHound started
-// inside the package would keep its selection and its license in private
-// copies. So on Windows FontHound is always started by the Windows shell
-// (explorer.exe with the path of fonthound.exe, as a double-click would),
-// which runs it as a normal app; the line then reaches it through
-// FontHound's own single-instance hand-over: a second fonthound.exe with
-// the arguments passes them to the open window and exits at once. This
-// server writes nothing in the user's folders except, when the frame is
-// under %APPDATA% or %LOCALAPPDATA%, a copy of it in %TEMP%\FontHound.
+// land in a private copy (%TEMP% is not virtualized). A FontHound started
+// inside the package would keep its selection and its license there. So on
+// Windows FontHound is started by the Windows shell (explorer.exe with the
+// path of fonthound.exe, as a double-click would), which runs it as a normal
+// app; the line then reaches it through FontHound's own single-instance
+// hand-over: a second fonthound.exe with the arguments passes them to the
+// open window and exits at once.
+//
+// Kept deliberately plain, because antivirus behaviour monitors judge a
+// script by what it does: no registry queries, no process or window
+// listing, no scan of other apps' folders, no hidden windows, no shell.
+// FontHound is found in its install folders or through its Start-menu
+// shortcut, and "is it open?" is answered by a file: the lock file its
+// window's web view holds while the app runs (Windows removes it when the
+// app closes). The server only reads files, starts explorer.exe or
+// fonthound.exe, and writes at most a copy of a still frame in
+// %TEMP%\FontHound.
 
 const fs = require('fs');
 const os = require('os');
@@ -45,7 +52,7 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.1.6';
+const VERSION = '0.1.7';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const DOWNLOAD = 'https://fonthound.app/download';
 const NO_SELECTION = 'No FontHound selection yet. Ask the user to open FontHound, put the fonts they like in the Mockup and press "Send to AI", then try again.';
@@ -72,8 +79,7 @@ function createServer(opts = {}) {
   const fileExists = opts.fileExists || ((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
   // the few file operations the Windows handling needs (tests pass stand-ins)
   const fsx = {
-    readdir: (p) => fs.readdirSync(p),
-    stat: (p) => fs.statSync(p, { bigint: true }),
+    readFile: (p) => fs.readFileSync(p),
     copyFile: (a, b) => fs.copyFileSync(a, b),
     mkdir: (p) => fs.mkdirSync(p, { recursive: true }),
     ...opts.fs,
@@ -82,7 +88,7 @@ function createServer(opts = {}) {
   const log = opts.log || ((m) => process.stderr.write(`[fonthound] ${m}\n`));
   const win = path.win32;
   const windowsDir = env.SystemRoot || env.windir || 'C:\\Windows';
-  const system32 = (exe) => win.join(windowsDir, 'System32', exe);
+  const localAppData = env.LOCALAPPDATA || win.join(homedir(), 'AppData', 'Local');
 
   // ---------- the selection file ----------
 
@@ -92,46 +98,6 @@ function createServer(opts = {}) {
     if (platform === 'darwin') return path.posix.join(homedir(), 'Library', 'Application Support', 'FontHound', 'ai-selection.json');
     return path.posix.join(env.XDG_CONFIG_HOME || path.posix.join(homedir(), '.config'), 'FontHound', 'ai-selection.json');
   }
-
-  // A stale private copy (Windows, inside an MSIX package such as the Claude
-  // app). Plugin 0.1.2 and earlier started FontHound inside the package, so
-  // its ai-selection.json could land in
-  // %LOCALAPPDATA%\Packages\<package>\LocalCache\Roaming\FontHound\, and from
-  // inside the package that copy hides the real file for good. This server
-  // never deletes it: it says where it is so the user can. Found by its
-  // effect: the copy and the path this server reads are the very same file.
-  // Only that one file name is looked at, in each package folder, once;
-  // after that only the copy found is checked again (until it's gone).
-  function sameFile(a, b) {
-    try {
-      const x = fsx.stat(a);
-      const y = fsx.stat(b);
-      return x.isFile() && y.isFile() && BigInt(x.ino) !== 0n && BigInt(x.ino) === BigInt(y.ino) && BigInt(x.dev) === BigInt(y.dev);
-    } catch { return false; }
-  }
-  let staleScanned = false;
-  let stale = null;
-  function staleCopy() {
-    if (env.FONTHOUND_SELECTION_FILE || platform !== 'win32' || !env.LOCALAPPDATA) return null;
-    const real = selectionFile();
-    if (stale) {
-      if (!sameFile(stale, real)) stale = null;
-      return stale;
-    }
-    if (staleScanned) return null;
-    staleScanned = true;
-    let packages = [];
-    try { packages = fsx.readdir(win.join(env.LOCALAPPDATA, 'Packages')); } catch { /* none */ }
-    for (const name of packages) {
-      const copy = win.join(env.LOCALAPPDATA, 'Packages', name, 'LocalCache', 'Roaming', 'FontHound', 'ai-selection.json');
-      if (sameFile(copy, real)) {
-        log(`stale private selection: ${copy}`);
-        return (stale = copy);
-      }
-    }
-    return null;
-  }
-  const staleMessage = (copy) => `FontHound's selection can't be read: an old copy in the Claude app's private storage hides the real one. It was left by an earlier version of this plugin, which started FontHound inside the Claude app. Ask the user to delete this one file (it is only that old copy; FontHound keeps the real selection elsewhere, and nothing else is affected), or delete it for them if they agree: ${copy}  Then call this tool again.`;
 
   // the parsed file (even without fonts), or null (no file, unreadable, damaged)
   function readFile() {
@@ -151,22 +117,52 @@ function createServer(opts = {}) {
 
   // ---------- starting FontHound ----------
 
-  // a registry value (the installer's own key), or null; execFile only, no shell
-  const reg = (key) => new Promise((resolve) => {
-    execFile(system32('reg.exe'), ['query', key, '/ve'], { windowsHide: true }, (err, out) => {
-      const m = !err && /REG_(?:EXPAND_)?SZ\s+(.+)/.exec(String(out));
-      resolve(m ? m[1].trim().replace(/^"|"$/g, '') : null);
-    });
-  });
-
-  // where the installer put fonthound.exe: its registry entry (per user, or
-  // for everyone), else the default folders (as premiere/panelupdate.js)
-  async function windowsExe() {
+  // Where FontHound is: its install folders (for one user, for everyone,
+  // and the folder of FontHound 0.7 and earlier), else wherever its
+  // Start-menu shortcut points (a folder the user chose in Setup).
+  function windowsExe() {
     if (env.FONTHOUND_EXE) return fileExists(env.FONTHOUND_EXE) ? env.FONTHOUND_EXE : null;
-    const dirs = [await reg('HKCU\\Software\\fonthound\\FontHound'), await reg('HKLM\\Software\\fonthound\\FontHound'),
-      win.join(env.LOCALAPPDATA || win.join(homedir(), 'AppData', 'Local'), 'FontHound'),
-      win.join(env.ProgramFiles || 'C:\\Program Files', 'FontHound')];
-    return dirs.filter(Boolean).map((d) => win.join(d, 'fonthound.exe')).find(fileExists) || null;
+    const dirs = [win.join(localAppData, 'Programs', 'FontHound'),
+      win.join(env.ProgramFiles || 'C:\\Program Files', 'FontHound'),
+      win.join(localAppData, 'FontHound')];
+    const found = dirs.map((d) => win.join(d, 'fonthound.exe')).find(fileExists);
+    if (found) return found;
+    const menus = [env.APPDATA && win.join(env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+      win.join(env.ProgramData || 'C:\\ProgramData', 'Microsoft', 'Windows', 'Start Menu', 'Programs')].filter(Boolean);
+    for (const menu of menus) {
+      for (const lnk of [win.join(menu, 'FontHound.lnk'), win.join(menu, 'FontHound', 'FontHound.lnk')]) {
+        const target = shortcutTarget(lnk);
+        if (target && /\\fonthound\.exe$/i.test(target) && fileExists(target)) return target;
+      }
+    }
+    return null;
+  }
+
+  // The local path a Windows shortcut (.lnk) points to, or null. Reads the
+  // documented Shell Link format ([MS-SHLLINK]): the header, the item list
+  // (skipped), then the LinkInfo block with the target's local path.
+  function shortcutTarget(lnk) {
+    let b;
+    try { b = fsx.readFile(lnk); } catch { return null; }
+    try {
+      if (b.length < 0x4c || b.readUInt32LE(0) !== 0x4c) return null;
+      const flags = b.readUInt32LE(0x14);
+      let at = 0x4c;
+      if (flags & 0x1) at += 2 + b.readUInt16LE(at); // HasLinkTargetIDList
+      if (!(flags & 0x2)) return null; // HasLinkInfo
+      const headerSize = b.readUInt32LE(at + 4);
+      if (!(b.readUInt32LE(at + 8) & 0x1)) return null; // VolumeIDAndLocalBasePath
+      if (headerSize >= 0x24) { // a Unicode path too
+        const start = at + b.readUInt32LE(at + 0x1c);
+        let end = start;
+        while (end + 1 < b.length && b.readUInt16LE(end) !== 0) end += 2;
+        const p = b.toString('utf16le', start, end);
+        if (p) return p;
+      }
+      const start = at + b.readUInt32LE(at + 0x10);
+      const end = b.indexOf(0, start);
+      return b.toString('latin1', start, end < 0 ? b.length : end) || null;
+    } catch { return null; }
   }
 
   // the program and arguments that open FontHound with `line`
@@ -199,17 +195,13 @@ function createServer(opts = {}) {
     }
   }
 
-  // Is a FontHound open and ready to take a line? tasklist lists one window
-  // title per process: FontHound's own window, or the hidden window its
-  // single-instance hand-over listens on ("<identifier>-siw"), which exists
-  // before the main one. Either means a second fonthound.exe will hand over.
-  const fontHoundReady = () => new Promise((resolve) => {
-    execFile(system32('tasklist.exe'), ['/V', '/FI', 'IMAGENAME eq fonthound.exe', '/FO', 'CSV', '/NH'], { windowsHide: true }, (err, out) => {
-      if (err) return resolve(false);
-      const titles = String(out).split(/\r?\n/).filter((r) => /^"fonthound\.exe"/i.test(r)).map((r) => (/"([^"]*)"\s*$/.exec(r) || [])[1] || '');
-      resolve(titles.some((t) => t === 'FontHound' || /-siw$/.test(t)));
-    });
-  });
+  // Is FontHound open and ready to take a line? Its window's web view
+  // (WebView2) holds a lock file in FontHound's web data folder while the
+  // app runs; Windows removes it when the app closes, even after a crash.
+  // The single-instance hand-over is set up before the web view starts, so
+  // once the file is there, a second fonthound.exe hands over.
+  const lockFile = () => win.join(localAppData, 'app.fonthound.desktop', 'EBWebView', 'lockfile');
+  const fontHoundReady = () => fileExists(lockFile());
 
   // Start fonthound.exe through the Windows shell: explorer.exe with its path
   // asks the shell to open it, as a double-click would, so it runs as a
@@ -217,12 +209,12 @@ function createServer(opts = {}) {
   // worked, so only "not found" counts as failure; then wait for the window.
   async function shellStart(exe) {
     const missing = await new Promise((resolve) => {
-      execFile(win.join(windowsDir, 'explorer.exe'), [exe], { windowsHide: true }, (err) => resolve(!!(err && err.code === 'ENOENT')));
+      execFile(win.join(windowsDir, 'explorer.exe'), [exe], {}, (err) => resolve(!!(err && err.code === 'ENOENT')));
     });
     if (missing) return 'explorer.exe was not found';
     const until = now() + timing.readyTimeout;
     for (;;) {
-      if (await fontHoundReady()) return null;
+      if (fontHoundReady()) return null;
       if (now() >= until) return `FontHound didn't open within ${Math.round(timing.readyTimeout / 1000)} s`;
       await sleep(timing.readyPoll);
     }
@@ -236,7 +228,7 @@ function createServer(opts = {}) {
     return new Promise((resolve) => {
       let done = false;
       const finish = (why) => { if (!done) { done = true; clearTimeout(timer); resolve(why); } };
-      const child = execFile(exe, args, { windowsHide: false }, (err) => finish(err ? `the hand-over failed (${err.code || err.message})` : null));
+      const child = execFile(exe, args, {}, (err) => finish(err ? `the hand-over failed (${err.code || err.message})` : null));
       const timer = setTimeout(() => {
         try { child.kill(); } catch { /* gone */ }
         finish('the open FontHound didn\'t take the line');
@@ -247,7 +239,7 @@ function createServer(opts = {}) {
   // Windows: FontHound open (started by the shell if needed), then the line
   // handed over. { ok: true } | { ok: false, opened, why }
   async function openOnWindows(exe, args) {
-    let opened = await fontHoundReady();
+    let opened = fontHoundReady();
     if (!opened) {
       const why = await shellStart(exe);
       if (why) return { ok: false, opened: false, why };
@@ -255,6 +247,85 @@ function createServer(opts = {}) {
     }
     const why = await handOver(exe, args);
     return why ? { ok: false, opened, why } : { ok: true };
+  }
+
+  // ---------- a font's licence, from its own file ----------
+
+  // Open licences, recognised in the font's licence description and URL
+  // (name table IDs 13 and 14). Anything else is the user's to check.
+  const OPEN_LICENCES = [
+    ['SIL Open Font License', /SIL Open Font Licen[cs]e|\bOFL\b|openfontlicense\.org|scripts\.sil\.org\/OFL/i],
+    ['Apache License', /Apache License|apache\.org\/licenses/i],
+    ['Ubuntu Font Licence', /Ubuntu Font Licen[cs]e|ubuntu\.com\/legal\/font-licen[cs]e/i],
+  ];
+
+  // What a TrueType/OpenType file (or the first font of a collection) says
+  // about its licence: { kind: 'open' | 'restricted-embedding' | 'unknown',
+  // name, url }, or null when the file can't be read. Reads only the table
+  // directory, the name table and the OS/2 table. 'restricted-embedding':
+  // the maker set OS/2 fsType "Restricted License embedding" (bit 1), a sign
+  // the file isn't meant to be passed on.
+  function fontLicence(file) {
+    let fd;
+    try {
+      fd = fs.openSync(file, 'r');
+      const size = fs.fstatSync(fd).size;
+      const at = (pos, len) => {
+        if (pos < 0 || len < 0 || pos + len > size) throw new Error('outside the file');
+        const b = Buffer.alloc(len);
+        fs.readSync(fd, b, 0, len, pos);
+        return b;
+      };
+      let dir = 0;
+      if (at(0, 4).toString('latin1') === 'ttcf') dir = at(12, 4).readUInt32BE(0);
+      const numTables = at(dir + 4, 2).readUInt16BE(0);
+      const records = at(dir + 12, numTables * 16);
+      const tables = {};
+      for (let i = 0; i < numTables; i++) {
+        tables[records.toString('latin1', i * 16, i * 16 + 4)] = { offset: records.readUInt32BE(i * 16 + 8), length: records.readUInt32BE(i * 16 + 12) };
+      }
+      const strings = { 13: '', 14: '' };
+      if (tables.name && tables.name.length < 4 * 1024 * 1024) {
+        const n = at(tables.name.offset, tables.name.length);
+        const count = n.readUInt16BE(2);
+        const store = n.readUInt16BE(4);
+        for (let i = 0; i < count; i++) {
+          const r = 6 + i * 12;
+          const platform = n.readUInt16BE(r);
+          const id = n.readUInt16BE(r + 6);
+          if (!(id in strings) || strings[id]) continue;
+          const len = n.readUInt16BE(r + 8);
+          const start = store + n.readUInt16BE(r + 10);
+          if (start + len > n.length) continue;
+          const raw = n.subarray(start, start + len);
+          // Windows and Unicode platforms: UTF-16 big-endian; Mac: one byte a character
+          strings[id] = platform === 1 ? raw.toString('latin1') : Buffer.from(raw).swap16().toString('utf16le');
+        }
+      }
+      const text = strings[13].trim();
+      const url = strings[14].trim() || null;
+      // a text that also restricts use (a proprietary font with some open
+      // components, say) is never taken as open
+      const restricted = /prohibited|may only|not permitted|Microsoft supplied font|end[- ]user licen[cs]e|EULA/i.test(text);
+      const open = !restricted && OPEN_LICENCES.find(([, re]) => re.test(text) || (url && re.test(url)));
+      if (open) return { kind: 'open', name: open[0], url };
+      const fsType = tables['OS/2'] && tables['OS/2'].length >= 10 ? at(tables['OS/2'].offset + 8, 2).readUInt16BE(0) : 0;
+      return { kind: (fsType & 0x000f) === 0x0002 ? 'restricted-embedding' : 'unknown', name: text ? text.slice(0, 300) : null, url };
+    } catch {
+      return null;
+    } finally {
+      if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ }
+    }
+  }
+
+  // The licence for one picked font: from its file, else from where it came from
+  function licenceOf(f, exists) {
+    if (f.source === 'adobe-fonts') return { kind: 'adobe-fonts', name: 'Adobe Fonts', url: null };
+    if (f.file && exists) return fontLicence(f.file) || { kind: 'unknown', name: null, url: null };
+    const from = f.webFont && f.webFont.from;
+    // Google Fonts and Fontsource carry only open-licence fonts
+    if (from === 'Google Fonts' || from === 'Fontsource') return { kind: 'open', name: `open licence (${from})`, url: null };
+    return { kind: 'unknown', name: null, url: null };
   }
 
   // ---------- tools ----------
@@ -270,24 +341,24 @@ function createServer(opts = {}) {
     {
       name: 'get_font_files',
       title: 'Check the picked fonts\' files',
-      description: 'For each font picked in FontHound: its file path and whether the file exists on this computer, so it can be loaded from the file when loading by name fails (Remotion, HTML, ffmpeg, Pillow). Adobe Fonts have no path: load them by name only.',
+      description: 'For each font picked in FontHound: its file path and whether the file exists on this computer, so it can be loaded from the file when loading by name fails (Remotion, HTML, ffmpeg, Pillow). Adobe Fonts have no path: load them by name only. Also `licence` ({kind: "open" | "restricted-embedding" | "unknown" | "adobe-fonts", name, url}), read from the font file itself: call it before copying a font file to any other computer or service (a cloud renderer); only "open" means it may be uploaded.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'Check the picked fonts\' files', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     {
       name: 'open_fonthound',
-      title: 'Open FontHound with the title',
-      description: 'Opens the FontHound desktop app (installed on this computer) on its Fonts tab with the video\'s title line typed in, so the user sees the line in their own installed fonts and picks by eye; optionally sets a still frame from the video as the Mockup background. Starts FontHound if it isn\'t open. It does not pick fonts or return any. After calling it, call wait_for_selection with the returned `since`.',
+      title: 'Open FontHound with the text',
+      description: 'Opens the FontHound desktop app (installed on this computer) on its Fonts tab with the user\'s text typed in (a title, headline, caption, lower third, slide or poster line), so the user sees it in their own installed fonts and picks by eye; optionally sets a still of the work (a video frame, the image or slide background) as the Mockup background. Starts FontHound if it isn\'t open. It does not pick fonts or return any. After calling it, call wait_for_selection with the returned `since`.',
       inputSchema: {
         type: 'object',
         properties: {
-          line: { type: 'string', description: 'The title text exactly as it will appear in the video (up to 1000 characters).' },
-          frame_path: { type: 'string', description: 'Optional absolute path to a PNG, JPEG, WebP, BMP or GIF still from the video, shown behind the fonts in the Mockup.' },
+          line: { type: 'string', description: 'The text exactly as it will appear: a title, headline, caption, lower third, slide or poster line, or quote (up to 1000 characters).' },
+          frame_path: { type: 'string', description: 'Optional absolute path to a PNG, JPEG, WebP, BMP or GIF still of the work (a video frame, the image or slide background), shown behind the fonts in the Mockup.' },
         },
         required: ['line'],
         additionalProperties: false,
       },
-      annotations: { title: 'Open FontHound with the title', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      annotations: { title: 'Open FontHound with the text', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     {
       name: 'wait_for_selection',
@@ -311,10 +382,6 @@ function createServer(opts = {}) {
   // ctx.progress(done, total, message): an MCP progress notification, when the client asked for them
   async function callTool(name, args, ctx = {}) {
     args = args && typeof args === 'object' ? args : {};
-    // a stale private copy hides the real selection: say so instead of handing it out
-    if (['get_font_selection', 'get_font_files', 'wait_for_selection'].includes(name) && staleCopy()) {
-      return ok({ status: 'stale-copy', file: stale, message: staleMessage(stale) });
-    }
     if (name === 'get_font_selection') {
       const sel = readSelection();
       return ok(sel ? { status: 'ok', selection: sel } : { status: 'no-selection', message: NO_SELECTION });
@@ -324,16 +391,20 @@ function createServer(opts = {}) {
       if (!sel) return ok({ status: 'no-selection', message: NO_SELECTION });
       return ok({
         status: 'ok',
-        fonts: sel.fonts.map((f) => ({
-          option: f.option, family: f.family, style: f.style, postscriptName: f.postscriptName, source: f.source,
-          file: f.file || null, exists: f.file ? fileExists(f.file) : false,
-          note: f.file ? (fileExists(f.file) ? null : 'the file is no longer there: load the font by name, or ask the user to check it is installed') : f.note,
-        })),
+        fonts: sel.fonts.map((f) => {
+          const exists = f.file ? fileExists(f.file) : false;
+          return {
+            option: f.option, family: f.family, style: f.style, postscriptName: f.postscriptName, source: f.source,
+            file: f.file || null, exists,
+            note: f.file ? (exists ? null : 'the file is no longer there: load the font by name, or ask the user to check it is installed') : f.note,
+            licence: licenceOf(f, exists),
+          };
+        }),
       });
     }
     if (name === 'open_fonthound') {
       const line = typeof args.line === 'string' ? args.line.trim() : '';
-      if (!line) return fail('open_fonthound needs `line`: the title text to try in FontHound.');
+      if (!line) return fail('open_fonthound needs `line`: the text to try in FontHound.');
       if (line.length > 1000) return fail('The line is too long for FontHound (1000 characters at most).');
       let frame = null;
       if (args.frame_path !== undefined && args.frame_path !== '') {
@@ -349,10 +420,9 @@ function createServer(opts = {}) {
           : 'FontHound runs on Windows (and soon macOS); it can\'t be opened here.');
       }
       const since = new Date(now()).toISOString();
-      const extra = staleCopy() ? { warning: staleMessage(stale) } : {};
       if (platform === 'win32') {
         const r = await openOnWindows(launch.cmd, launch.args);
-        if (r.ok) return ok({ status: 'opened', since, message: `${OPENED} (If FontHound doesn't come to the front, it's on the taskbar.)`, ...extra });
+        if (r.ok) return ok({ status: 'opened', since, message: `${OPENED} (If FontHound doesn't come to the front, it's on the taskbar.)` });
         log(`open_fonthound: ${r.why}`);
         return ok({
           status: r.opened ? 'opened-without-line' : 'not-opened',
@@ -361,12 +431,11 @@ function createServer(opts = {}) {
           message: r.opened
             ? `FontHound is open, but the line couldn't be handed to it (${r.why}). Ask the user to type the line on its Fonts tab, add the fonts they like to the Mockup (+) and press "Send to AI". Then call wait_for_selection with this \`since\`.`
             : `FontHound couldn't be opened from here (${r.why}). Ask the user to open FontHound themselves (Start menu), type the line on its Fonts tab, add the fonts they like to the Mockup (+) and press "Send to AI". Then call wait_for_selection with this \`since\`.`,
-          ...extra,
         });
       }
       try {
         await new Promise((resolve, reject) => {
-          const child = execFile(launch.cmd, launch.args, { windowsHide: false }, (err) => { if (err && err.code === 'ENOENT') reject(err); });
+          const child = execFile(launch.cmd, launch.args, {}, (err) => { if (err && err.code === 'ENOENT') reject(err); });
           if (child && typeof child.unref === 'function') child.unref();
           // the app keeps running; a start that fails shows up at once
           setTimeout(resolve, 300);
@@ -455,7 +524,7 @@ function createServer(opts = {}) {
     }
   }
 
-  return { handle, callTool, TOOLS, selectionFile, launchCommand, readSelection, staleCopy };
+  return { handle, callTool, TOOLS, selectionFile, launchCommand, readSelection, shortcutTarget, fontLicence };
 }
 
 // stdio: one JSON message per line in, one per line out; logs go to stderr

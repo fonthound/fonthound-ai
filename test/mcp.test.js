@@ -123,73 +123,77 @@ test('the selection file is per user, where FontHound writes it', () => {
   assert.equal(mac.selectionFile(), '/Users/ed/Library/Application Support/FontHound/ai-selection.json');
 });
 
-// A stand-in for child_process.execFile on Windows. Answers reg.exe from
-// regAnswers; tasklist.exe from `ready` (a list of answers, the last one
-// repeats: true = FontHound's window is listed, 'siw' = its hidden
-// single-instance window, 'na' = no window yet, false = not running);
-// explorer.exe exits with 1 (as the real one does); fonthound.exe (the
-// hand-over) exits at once with `handover` (null = ok), or never ('hang').
-function fakeWin({ regAnswers = {}, ready = [true], handover = null } = {}) {
+// A stand-in for child_process.execFile on Windows: explorer.exe exits with 1
+// (as the real one does); fonthound.exe (the hand-over) exits at once with
+// `handover` (null = ok), or never ('hang').
+function fakeWin({ handover = null } = {}) {
   const calls = [];
   const execFile = (cmd, args, opts, cb) => {
     const call = { cmd, args, killed: false };
     calls.push(call);
     const child = { unref() {}, kill() { call.killed = true; } };
-    if (/reg\.exe$/i.test(cmd)) {
-      const v = regAnswers[args[1]];
-      setImmediate(() => (v ? cb(null, '\r\n' + args[1] + '\r\n    (Default)    REG_SZ    ' + v + '\r\n') : cb(new Error('not found'))));
-    } else if (/tasklist\.exe$/i.test(cmd)) {
-      const r = ready.length > 1 ? ready.shift() : ready[0];
-      const out = r === true ? '"fonthound.exe","4242","Console","1","50,000 K","Running","PC\\Ed","0:00:01","FontHound"\r\n'
-        : r === 'siw' ? '"fonthound.exe","4242","Console","1","50,000 K","Running","PC\\Ed","0:00:01","app.fonthound.desktop-siw"\r\n'
-          : r === 'na' ? '"fonthound.exe","4242","Console","1","50,000 K","Running","PC\\Ed","0:00:00","N/A"\r\n'
-            : 'INFO: No tasks are running which match the specified criteria.\r\n';
-      setImmediate(() => cb(null, out, ''));
-    } else if (/explorer\.exe$/i.test(cmd)) {
+    if (/explorer\.exe$/i.test(cmd)) {
       setImmediate(() => cb(Object.assign(new Error('Command failed'), { code: 1 })));
     } else if (handover !== 'hang') {
       setImmediate(() => cb(handover));
     }
     return child;
   };
-  const started = () => calls.filter((c) => !/(reg|tasklist)\.exe$/i.test(c.cmd));
-  return { calls, execFile, started };
+  return { calls, execFile, started: () => calls };
 }
-const WIN = { SystemRoot: 'C:\\Windows', APPDATA: 'C:\\Users\\Ed\\AppData\\Roaming', LOCALAPPDATA: 'C:\\Users\\Ed\\AppData\\Local', TEMP: 'C:\\Users\\Ed\\AppData\\Local\\Temp' };
+const WIN = { SystemRoot: 'C:\\Windows', APPDATA: 'C:\\Users\\Ed\\AppData\\Roaming', LOCALAPPDATA: 'C:\\Users\\Ed\\AppData\\Local', TEMP: 'C:\\Users\\Ed\\AppData\\Local\\Temp', ProgramFiles: 'C:\\Program Files', ProgramData: 'C:\\ProgramData' };
 const EXPLORER = 'C:\\Windows\\explorer.exe';
+const LOCK = 'C:\\Users\\Ed\\AppData\\Local\\app.fonthound.desktop\\EBWebView\\lockfile';
 const quiet = () => {};
 const fast = { readyTimeout: 3000, readyPoll: 500, handoverTimeout: 50 };
+// fileExists for: these files, plus the lock file while `open()` says FontHound is open
+function files(list, open = () => true) {
+  return (p) => (p === LOCK ? open() : list.includes(p));
+}
+// a sequence of answers, the last one repeats
+const seq = (...a) => () => (a.length > 1 ? a.shift() : a[0]);
 
 test('open_fonthound: FontHound already open, so the line is handed to it (no shell, no explorer)', async () => {
-  const exe = 'D:\\Apps\\FontHound\\fonthound.exe';
+  const exe = 'C:\\Users\\Ed\\AppData\\Local\\Programs\\FontHound\\fonthound.exe';
   const frame = path.join(dir, 'frame.png');
   fs.writeFileSync(frame, 'png');
-  const fx = fakeWin({ regAnswers: { 'HKCU\\Software\\fonthound\\FontHound': 'D:\\Apps\\FontHound' } });
-  const s = createServer({ env: WIN, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe || p === frame, log: quiet });
+  const fx = fakeWin();
+  const s = createServer({ env: WIN, platform: 'win32', execFile: fx.execFile, fileExists: files([exe, frame]), log: quiet });
   const r = await s.callTool('open_fonthound', { line: '  Lemon "Season" & co  ', frame_path: frame });
   assert.ok(!r.isError, r.content[0].text);
   const out = JSON.parse(r.content[0].text);
   assert.equal(out.status, 'opened');
   assert.ok(Date.parse(out.since) <= Date.now());
-  assert.equal(fx.calls[0].cmd, 'C:\\Windows\\System32\\reg.exe');
   // one argument each, as given: nothing to quote or escape; a frame outside %APPDATA% is passed as it is
   assert.deepEqual(fx.started(), [{ cmd: exe, args: ['--mockup-line', 'Lemon "Season" & co', '--mockup-frame', frame], killed: false }]);
-  const list = fx.calls.find((c) => /tasklist/.test(c.cmd));
-  assert.equal(list.cmd, 'C:\\Windows\\System32\\tasklist.exe');
-  assert.deepEqual(list.args, ['/V', '/FI', 'IMAGENAME eq fonthound.exe', '/FO', 'CSV', '/NH']);
-  // the hidden single-instance window counts as open too
-  const fx2 = fakeWin({ regAnswers: { 'HKLM\\Software\\fonthound\\FontHound': 'D:\\Apps\\FontHound' }, ready: ['siw'] });
-  const s2 = createServer({ env: WIN, platform: 'win32', execFile: fx2.execFile, fileExists: (p) => p === exe, log: quiet });
-  assert.equal(JSON.parse((await s2.callTool('open_fonthound', { line: 'שלום' })).content[0].text).status, 'opened');
-  assert.deepEqual(fx2.started().map((c) => c.args), [['--mockup-line', 'שלום']]);
+});
+
+test('open_fonthound: FontHound is found in Program Files, its old folder, or through its Start-menu shortcut', async () => {
+  for (const exe of ['C:\\Program Files\\FontHound\\fonthound.exe', 'C:\\Users\\Ed\\AppData\\Local\\FontHound\\fonthound.exe']) {
+    const s = createServer({ env: WIN, platform: 'win32', fileExists: files([exe]) });
+    assert.equal((await s.launchCommand('Hi')).cmd, exe);
+  }
+  // a folder the user chose: the shortcut's target (a minimal shortcut in the documented format, see shortcutBytes)
+  const chosen = 'D:\\Apps\\FontHound\\fonthound.exe';
+  const lnk = 'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\FontHound.lnk';
+  const s = createServer({ env: WIN, platform: 'win32', fileExists: files([chosen]),
+    fs: { readFile: (p) => { if (p === lnk) return shortcutBytes(chosen); throw new Error('ENOENT'); } } });
+  assert.equal((await s.launchCommand('Hi')).cmd, chosen);
+  assert.equal(s.shortcutTarget(lnk), chosen);
+  // a shortcut to something else, or a damaged one, isn't taken
+  const other = createServer({ env: WIN, platform: 'win32', fileExists: () => true, fs: { readFile: () => shortcutBytes('D:\\x\\other.exe') } });
+  assert.equal(other.shortcutTarget('a.lnk'), 'D:\\x\\other.exe');
+  const odd = createServer({ env: WIN, platform: 'win32', fileExists: () => false, fs: { readFile: () => Buffer.from('not a shortcut') } });
+  assert.equal(odd.shortcutTarget('a.lnk'), null);
+  assert.equal(await odd.launchCommand('Hi'), null);
 });
 
 test('open_fonthound: FontHound not open, so the Windows shell starts it, then the line is handed over', async () => {
   const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
   const clock = fakeClock();
-  // not listed, then a process without a window yet, then its window
-  const fx = fakeWin({ ready: [false, 'na', 'na', true] });
-  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe,
+  // not open, then still starting twice, then its window is up
+  const fx = fakeWin();
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: files([exe], seq(false, false, false, true)),
     now: clock.now, sleep: clock.sleep, timing: fast, log: quiet });
   const out = JSON.parse((await s.callTool('open_fonthound', { line: 'Hi there' })).content[0].text);
   assert.equal(out.status, 'opened');
@@ -205,7 +209,7 @@ test('open_fonthound: a frame under %APPDATA% or %LOCALAPPDATA% is handed over a
   const frame = 'C:\\Users\\Ed\\AppData\\Local\\Remotion\\Still Frame.PNG';
   const copies = [];
   const fx = fakeWin();
-  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe || p === frame,
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: files([exe, frame]),
     fs: { mkdir: () => {}, copyFile: (a, b) => copies.push([a, b]) }, log: quiet });
   await s.callTool('open_fonthound', { line: 'Hi', frame_path: frame });
   const copy = 'C:\\Users\\Ed\\AppData\\Local\\Temp\\FontHound\\claude-frame.png';
@@ -219,8 +223,8 @@ test('open_fonthound: a frame under %APPDATA% or %LOCALAPPDATA% is handed over a
 test('open_fonthound: FontHound never opens, so the user opens it (nothing else is tried)', async () => {
   const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
   const clock = fakeClock();
-  const fx = fakeWin({ ready: [false] });
-  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe,
+  const fx = fakeWin();
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: files([exe], () => false),
     now: clock.now, sleep: clock.sleep, timing: fast, log: quiet });
   const r = await s.callTool('open_fonthound', { line: 'Hi there' });
   assert.ok(!r.isError);
@@ -236,14 +240,14 @@ test('open_fonthound: FontHound never opens, so the user opens it (nothing else 
 test('open_fonthound: a hand-over that doesn\'t finish is closed again, and the user types the line', async () => {
   const exe = 'C:\\Program Files\\FontHound\\fonthound.exe';
   const fx = fakeWin({ handover: 'hang' });
-  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: (p) => p === exe, timing: fast, log: quiet });
+  const s = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx.execFile, fileExists: files([exe]), timing: fast, log: quiet });
   const out = JSON.parse((await s.callTool('open_fonthound', { line: 'Hi' })).content[0].text);
   assert.equal(out.status, 'opened-without-line');
   assert.match(out.message, /type the line on its Fonts tab[\s\S]*wait_for_selection/);
   assert.equal(fx.started()[0].killed, true);
   // a hand-over that fails outright says so too
   const fx2 = fakeWin({ handover: Object.assign(new Error('boom'), { code: 3 }) });
-  const s2 = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx2.execFile, fileExists: (p) => p === exe, timing: fast, log: quiet });
+  const s2 = createServer({ env: { ...WIN, FONTHOUND_EXE: exe }, platform: 'win32', execFile: fx2.execFile, fileExists: files([exe]), timing: fast, log: quiet });
   const out2 = JSON.parse((await s2.callTool('open_fonthound', { line: 'Hi' })).content[0].text);
   assert.equal(out2.status, 'opened-without-line');
   assert.match(out2.message, /hand-over failed \(3\)/);
@@ -251,7 +255,7 @@ test('open_fonthound: a hand-over that doesn\'t finish is closed again, and the 
 
 test('open_fonthound: FontHound not installed, bad input, macOS', async () => {
   const fx = fakeWin();
-  const s = createServer({ env: { LOCALAPPDATA: 'C:\\nope', ProgramFiles: 'C:\\nope' }, platform: 'win32', execFile: fx.execFile, fileExists: () => false });
+  const s = createServer({ env: { LOCALAPPDATA: 'C:\\nope', ProgramFiles: 'C:\\nope', ProgramData: 'C:\\nope' }, platform: 'win32', execFile: fx.execFile, fileExists: () => false, fs: { readFile: () => { throw new Error('ENOENT'); } } });
   const r = await s.callTool('open_fonthound', { line: 'Hi' });
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /isn't installed[\s\S]*fonthound\.app\/download/);
@@ -271,10 +275,104 @@ test('open_fonthound: FontHound not installed, bad input, macOS', async () => {
   assert.match((await createServer({ env: {}, platform: 'linux' }).callTool('open_fonthound', { line: 'Hi' })).content[0].text, /Windows/);
 });
 
-test('the server never runs a shell, PowerShell or WMI', () => {
-  const src = fs.readFileSync(SERVER, 'utf8');
-  assert.ok(!/powershell|Invoke-CimMethod|Win32_Process|cmd\.exe|shell:\s*true|\bexecSync\b|\bspawn\(|[^.]\bexec\(/i.test(src.replace(/^\s*\/\/.*$/gm, '')));
-  assert.ok(!/unlink|rmSync|rmdir/.test(src), 'deletes nothing');
+// A minimal OpenType file: a name table (licence text and URL, Windows
+// platform, UTF-16BE) and an OS/2 table with `fsType`; `collection` wraps it in a .ttc.
+function fontBytes({ text = '', url = '', fsType = 0, collection = false } = {}) {
+  const strs = [[13, text], [14, url]].filter(([, v]) => v).map(([id, v]) => [id, Buffer.from(v, 'utf16le').swap16()]);
+  const head = Buffer.alloc(6 + strs.length * 12);
+  head.writeUInt16BE(strs.length, 2);
+  head.writeUInt16BE(head.length, 4);
+  let off = 0;
+  strs.forEach(([id, b], i) => {
+    const r = 6 + i * 12;
+    head.writeUInt16BE(3, r); head.writeUInt16BE(1, r + 2); head.writeUInt16BE(0x409, r + 4);
+    head.writeUInt16BE(id, r + 6); head.writeUInt16BE(b.length, r + 8); head.writeUInt16BE(off, r + 10);
+    off += b.length;
+  });
+  const name = Buffer.concat([head, ...strs.map(([, b]) => b)]);
+  const os2 = Buffer.alloc(96);
+  os2.writeUInt16BE(fsType, 8);
+  const pre = collection ? 16 : 0; // a collection header pointing at the one font
+  const dir = Buffer.alloc(12 + 2 * 16);
+  dir.writeUInt32BE(0x00010000, 0);
+  dir.writeUInt16BE(2, 4);
+  const nameAt = pre + dir.length;
+  const os2At = nameAt + name.length;
+  [['OS/2', os2At, os2.length], ['name', nameAt, name.length]].forEach(([tag, at, len], i) => {
+    dir.write(tag, 12 + i * 16, 'latin1');
+    dir.writeUInt32BE(at, 12 + i * 16 + 8);
+    dir.writeUInt32BE(len, 12 + i * 16 + 12);
+  });
+  const ttc = Buffer.alloc(pre);
+  if (collection) {
+    ttc.write('ttcf', 0, 'latin1');
+    ttc.writeUInt32BE(0x00010000, 4);
+    ttc.writeUInt32BE(1, 8);
+    ttc.writeUInt32BE(pre, 12);
+  }
+  return Buffer.concat([ttc, dir, name, os2]);
+}
+
+test('get_font_files: each font licence, read from its own file', async () => {
+  const write = (name, opts) => { const f = path.join(dir, name); fs.writeFileSync(f, fontBytes(opts)); return f; };
+  const ofl = write('ofl.ttf', { text: 'This Font Software is licensed under the SIL Open Font License, Version 1.1.', url: 'https://openfontlicense.org' });
+  const apache = write('apache.ttf', { url: 'http://www.apache.org/licenses/LICENSE-2.0' });
+  const bought = write('bought.otf', { text: 'Licensed under the Foundry EULA.', url: 'https://foundry.example/eula' });
+  const mixed = write('mixed.ttf', { text: 'Microsoft supplied font. Any other use is prohibited. Some outlines under the Apache License.' });
+  const locked = write('locked.ttf', { fsType: 0x0002 });
+  const ttc = write('coll.ttc', { text: 'SIL Open Font License', collection: true });
+  const s = createServer({ env: {} });
+  assert.deepEqual(s.fontLicence(ofl), { kind: 'open', name: 'SIL Open Font License', url: 'https://openfontlicense.org' });
+  assert.equal(s.fontLicence(apache).name, 'Apache License');
+  assert.deepEqual(s.fontLicence(bought), { kind: 'unknown', name: 'Licensed under the Foundry EULA.', url: 'https://foundry.example/eula' });
+  assert.equal(s.fontLicence(mixed).kind, 'unknown', 'a restricting text is never open');
+  assert.equal(s.fontLicence(locked).kind, 'restricted-embedding');
+  assert.equal(s.fontLicence(ttc).kind, 'open');
+  assert.equal(s.fontLicence(fontFile), null, 'not a font: nothing claimed');
+  assert.equal(s.fontLicence(path.join(dir, 'nope.ttf')), null);
+  // through the tool: from the file, Adobe Fonts, a Google font previewed without installing
+  const sel = sample();
+  sel.fonts[0].file = ofl;
+  sel.fonts[2] = { ...sel.fonts[2], source: 'not-installed', file: null, webFont: { from: 'Google Fonts', css: 'https://fonts.googleapis.com/css2?family=Gone' } };
+  sel.fonts.push({ ...sel.fonts[0], option: 4, file: bought });
+  const file = path.join(dir, 'licences.json');
+  fs.writeFileSync(file, JSON.stringify(sel));
+  const out = JSON.parse((await createServer({ env: { FONTHOUND_SELECTION_FILE: file } }).callTool('get_font_files', {})).content[0].text);
+  assert.deepEqual(out.fonts.map((f) => f.licence.kind), ['open', 'adobe-fonts', 'open', 'unknown']);
+  assert.equal(out.fonts[3].licence.url, 'https://foundry.example/eula');
+});
+
+test('the skill gates uploads of fonts that are not open-licensed', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'fonthound', 'SKILL.md'), 'utf8');
+  const a = skill.indexOf('- **Fonts and third parties.**');
+  assert.ok(a > 0, 'the rule is there');
+  const rule = skill.slice(a, skill.indexOf('\n- ', a + 10));
+  // silent on the user's computer
+  assert.match(rule, /Rendering on the user's computer:[\s\S]*Say nothing about licences: no note, no question/);
+  // a stop and an explicit Continue / Cancel decision before sending a non-open font
+  assert.match(rule, /`unknown` or `restricted-embedding`: STOP before sending anything/);
+  assert.match(rule, /Reply \*\*Continue\*\* to upload it, or[\s>]+\*\*Cancel\*\*/);
+  assert.match(rule, /Upload only after an explicit "Continue"/);
+  // never by default; Adobe Fonts never; nothing called allowed unless open
+  assert.match(rule, /no answer: don't upload\. Never upload by default\./);
+  assert.match(rule, /`adobe-fonts`: never upload it/);
+  assert.match(rule, /Never say a font may be uploaded unless its `licence\.kind` is `open`/);
+  // tool-neutral
+  assert.ok(!/remotion|hyperframes|lambda|heygen|cloud run|ffmpeg|pillow/i.test(rule), 'no tool names');
+});
+
+test('the server does nothing an antivirus would read as suspicious', () => {
+  const code = fs.readFileSync(SERVER, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  // no shell, PowerShell or WMI
+  assert.ok(!/powershell|Invoke-CimMethod|Win32_Process|cmd\.exe|shell:\s*true|\bexecSync\b|\bspawn\(|[^.]\bexec\(/i.test(code));
+  // no registry, no process or window listing, no hidden windows
+  assert.ok(!/reg\.exe|tasklist|wmic|windowsHide|\bHK(CU|LM)\b/i.test(code));
+  // no scan of other apps' package folders, no dynamic code, no encoded blobs
+  assert.ok(!/\\\\Packages|'Packages'|readdir/i.test(code));
+  assert.ok(!/\beval\(|new Function|base64|atob\(|fromCharCode/i.test(code));
+  // the only programs it starts: explorer.exe (with FontHound's path) and fonthound.exe
+  assert.equal((code.match(/execFile\(/g) || []).length, 3);
+  assert.ok(!/unlink|rmSync|rmdir|writeFile/.test(code), 'deletes nothing, writes nothing but the frame copy');
 });
 
 test('wait_for_selection returns as soon as Send to AI is pressed', async () => {
@@ -387,66 +485,30 @@ test('the plugin manifest and the server agree on the version', () => {
   assert.ok(fs.readFileSync(SERVER, 'utf8').includes(`const VERSION = '${manifest.version}';`));
 });
 
-// ---------- a stale private copy inside an MSIX package (Windows) ----------
-
-// A stand-in file system: files { path: ino }; folders follow from them.
-function fakeFs(files) {
-  const calls = { stat: [], readdir: [] };
-  const norm = (p) => p.toLowerCase();
-  const map = new Map(Object.entries(files).map(([p, v]) => [norm(p), { p, v }]));
-  return {
-    calls,
-    fsx: {
-      readdir: (d) => {
-        calls.readdir.push(d);
-        const pre = norm(d) + '\\';
-        const names = new Set();
-        for (const [k, { p }] of map) if (k.startsWith(pre)) names.add(p.slice(pre.length).split('\\')[0]);
-        if (!names.size) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-        return [...names];
-      },
-      stat: (p) => {
-        calls.stat.push(p);
-        if (!map.has(norm(p))) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-        return { isFile: () => true, ino: BigInt(map.get(norm(p)).v), dev: 7n };
-      },
-      remove: (p) => map.delete(norm(p)),
-    },
-  };
+// A Windows shortcut (.lnk) to `target`, laid out as [MS-SHLLINK] describes:
+// the header, no item list, a LinkInfo with the local path in ANSI and Unicode.
+function shortcutBytes(target) {
+  const header = Buffer.alloc(0x4c);
+  header.writeUInt32LE(0x4c, 0);
+  header.writeUInt32LE(0x2 | 0x80, 0x14); // HasLinkInfo, IsUnicode
+  const ansi = Buffer.from(target + ' ', 'latin1');
+  const wide = Buffer.from(target + ' ', 'utf16le');
+  const volume = Buffer.alloc(0x10);
+  volume.writeUInt32LE(0x10, 0);
+  const info = Buffer.alloc(0x24);
+  const ansiAt = 0x24 + volume.length;
+  const suffixAt = ansiAt + ansi.length;
+  const wideAt = suffixAt + 1;
+  info.writeUInt32LE(0x24, 4); // header size: Unicode offsets present
+  info.writeUInt32LE(1, 8); // VolumeIDAndLocalBasePath
+  info.writeUInt32LE(0x24, 0x0c);
+  info.writeUInt32LE(ansiAt, 0x10);
+  info.writeUInt32LE(suffixAt, 0x18);
+  info.writeUInt32LE(wideAt, 0x1c);
+  const body = Buffer.concat([info, volume, ansi, Buffer.alloc(1), wide]);
+  body.writeUInt32LE(body.length, 0);
+  return Buffer.concat([header, body]);
 }
-const L = WIN.LOCALAPPDATA;
-const R = WIN.APPDATA;
-const PRIVATE_SEL = L + '\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\FontHound\\ai-selection.json';
-const REAL_SEL = R + '\\FontHound\\ai-selection.json';
-
-test('a stale private copy is reported with its path, never deleted', async () => {
-  // inside the package the real path shows the private copy: the same file
-  const { fsx, calls } = fakeFs({ [PRIVATE_SEL]: 41, [REAL_SEL]: 41, [L + '\\Packages\\Other.App_1\\LocalCache\\Roaming\\Thing\\a.txt']: 5 });
-  const s = createServer({ env: WIN, platform: 'win32', fs: fsx, log: quiet });
-  for (const tool of ['get_font_selection', 'get_font_files', 'wait_for_selection']) {
-    const out = JSON.parse((await s.callTool(tool, { timeout_s: 1 })).content[0].text);
-    assert.equal(out.status, 'stale-copy', tool);
-    assert.equal(out.file, PRIVATE_SEL);
-    assert.match(out.message, /old copy[\s\S]*Ask the user to delete this one file/);
-    assert.ok(out.message.includes(PRIVATE_SEL));
-  }
-  // only FontHound's own file name was looked at in each package, and the package list read once
-  assert.equal(calls.readdir.length, 1);
-  assert.ok(calls.stat.every((p) => /FontHound\\ai-selection\.json$/i.test(p)), calls.stat.join('\n'));
-  // once the user deleted it: back to normal (here the file is simply gone)
-  fsx.remove(PRIVATE_SEL);
-  fsx.remove(REAL_SEL);
-  assert.equal(JSON.parse((await s.callTool('get_font_selection', {})).content[0].text).status, 'no-selection');
-});
-
-test('no stale copy: outside the package the copy is a different file; macOS and the test override never look', () => {
-  const { fsx } = fakeFs({ [PRIVATE_SEL]: 41, [REAL_SEL]: 42 });
-  assert.equal(createServer({ env: WIN, platform: 'win32', fs: fsx }).staleCopy(), null);
-  const watched = fakeFs({ [PRIVATE_SEL]: 41, [REAL_SEL]: 41 });
-  assert.equal(createServer({ env: WIN, platform: 'darwin', fs: watched.fsx }).staleCopy(), null);
-  assert.equal(createServer({ env: { ...WIN, FONTHOUND_SELECTION_FILE: selFile }, platform: 'win32', fs: watched.fsx }).staleCopy(), null);
-  assert.equal(watched.calls.readdir.length, 0);
-});
 
 test('wait_for_selection sends progress while it waits, and its timeout says how to go on', async () => {
   const file = path.join(dir, 'progress.json');

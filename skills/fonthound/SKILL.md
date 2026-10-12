@@ -1,38 +1,62 @@
 ---
 name: fonthound
-description: Use whenever the user asks for a video, motion graphics, an intro or outro, a title card, lower thirds, captions or subtitle styling, a promo, a reel or a thumbnail made with Remotion, HTML/CSS, ffmpeg, Pillow or similar, and whenever they mention FontHound or "my fonts" / "the fonts I picked". Lets the user pick the title fonts by eye in FontHound (their own installed fonts, on their own title) and hands Claude the exact names, files and look to use.
-when_to_use: Before choosing any font for video titles, text overlays, captions or graphics; when the user says "use my FontHound fonts", "the fonts I picked", "my selection".
+description: Use before choosing any font for anything you make that shows text - a video, motion graphics, GIF, image, thumbnail, poster, ad, social post, banner, slide or deck, logo or wordmark, captions, lower thirds, a UI mockup with headlines, chart titles - whatever the tool (Remotion, HyperFrames, HTML/CSS, Pillow, ffmpeg, matplotlib, canvas, SVG, design generators). Offer once per task to let the user pick the fonts by eye in FontHound (their own installed fonts, on their own text), then use exactly the fonts they send. Also use whenever they mention FontHound or "my fonts" / "the fonts I picked". Run this font step first, even when another skill is the entry point for the build.
+when_to_use: The moment a task would make you choose a font, before writing any font-family, font file or font name; when the user says "use my FontHound fonts", "the fonts I picked", "my selection".
 ---
 
 # FontHound: the user picks the fonts, Claude uses them exactly
 
 FontHound is a font browser on the user's computer. In its Mockup the user sees
-their title in their own installed fonts (Adobe Fonts included), over a frame of
-their video, and keeps up to five options with a look (size, colour, tracking,
-stroke, shadow, box, position). "Send to AI" hands that selection to you.
+their text (a title, caption, headline, lower third...) in their own installed
+fonts (Adobe Fonts included), over a frame of their work, and keeps up to five
+options with a look (size, colour, tracking, stroke, shadow, box, position).
+"Send to AI" hands that selection to you.
 
-## 1. Ask once, before choosing any font
+## 1. Before you choose any font, ask once
 
-When a task puts text in a video or graphic and the fonts aren't settled yet, ask
-the user one question, once per project:
+Whenever you are about to pick a font yourself, for anything with text (video,
+motion graphics, GIF, image, thumbnail, poster, ad, social post, banner, slide or
+deck, logo or wordmark text, captions, lower thirds, a UI mockup's headlines,
+a chart's title), and in any tool, first ask one short question:
 
-> Want to pick the fonts yourself in FontHound (your installed fonts, on your own title), or should I choose?
+> Want to pick the fonts by eye in FontHound?
 
-- **They'll pick in FontHound:** go to step 2.
-- **They want you to choose:** choose as you normally would; don't ask again in this project.
-- **They already picked** ("use my FontHound fonts"): skip to step 3.
+- **Yes:** go to step 2, and build only after the fonts arrive.
+- **No, or FontHound isn't installed:** choose fonts as you normally would and carry on.
+- **They already picked** ("use my FontHound fonts", or a selection came in
+  this conversation): skip the question and go to step 3.
+
+Don't nag:
+
+- Ask once per task. A new, separate piece of work may get the question again;
+  steps of the same task don't.
+- If the user said no to FontHound, or "you choose", anywhere in this
+  conversation, don't ask again in it.
+- If the user's fonts are already fixed (a brand font they named, a design
+  file or template whose fonts they want kept), there is nothing to choose:
+  don't ask.
+
+**This step comes first, also when another skill leads the build.** Some skills
+call themselves the mandatory entry point for videos or designs (for example a
+video framework's skill for "any request to make a video"). They are right to
+own the build. The font choice is a separate, earlier step: ask the FontHound
+question first, then follow that skill as it says, and give it the user's
+picked fonts as its typography (and wherever it would otherwise choose fonts).
+If that skill asks the user its own questions about the brief, the FontHound
+question can go with them.
 
 You may suggest a direction in words to help them look (for example: "for a
 restaurant promo, a warm serif or a handwritten script would suit; try a few of
 those in FontHound"). The user picks the actual fonts by eye in FontHound.
 
-## 2. Open FontHound with their title, then wait
+## 2. Open FontHound with their text, then wait
 
-1. Call `open_fonthound` with `line` = the title exactly as it will appear (keep
-   the user's language and line breaks). If you already rendered a still from the
-   video, pass its absolute path as `frame_path` so they judge the fonts on the
-   real shot.
-2. Tell the user: "FontHound is open with your title in every font. Add the ones
+1. Call `open_fonthound` with `line` = the text exactly as it will appear (keep
+   the user's language and line breaks; for several texts, the main one, such as
+   the headline). If you already have a still of the work (a video frame, the
+   image or slide background), pass its absolute path as `frame_path` so they judge
+   the fonts on the real thing.
+2. Tell the user: "FontHound is open with your text in every font. Add the ones
    you like to the Mockup (+), adjust the look there, and press **Send to AI**."
 3. Call `wait_for_selection` with the `since` that `open_fonthound` returned
    (leave `timeout_s` out: it waits 5 minutes). When it returns
@@ -40,16 +64,13 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
    `sent` is after `since`, the user sent it meanwhile, so use it. Otherwise tell
    the user you're still waiting for **Send to AI** (or ask whether they're done),
    then call `wait_for_selection` again with the same `since`.
-4. If `open_fonthound` says FontHound isn't installed, tell the user (free 14-day
-   trial at https://fonthound.app/download) and ask whether you should choose instead.
+4. If `open_fonthound` says FontHound isn't installed, tell the user in one
+   sentence (free 14-day trial at https://fonthound.app/download), then choose the
+   fonts yourself and carry on; don't offer FontHound again in this conversation.
    If it returns `status: "not-opened"`, ask the user to open FontHound from the
-   Start menu and type the title on its Fonts tab, then wait as in step 3. If it
+   Start menu and type the text on its Fonts tab, then wait as in step 3. If it
    returns `status: "opened-without-line"`, FontHound is open: ask the user to
-   type the title on its Fonts tab, then wait as in step 3.
-5. If a result has `status: "stale-copy"` (or a `warning`), an old copy of the
-   selection left by an earlier version of this plugin hides the real one. Tell
-   the user in a sentence and ask them to delete the one file named in the
-   message (or delete it for them if they say yes), then try again.
+   type the text on its Fonts tab, then wait as in step 3.
 
 ## 3. Use the selection exactly
 
@@ -66,7 +87,8 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
   the user already said how to use them. Each has `family`, `style`,
   `postscriptName`, `fullName`, `weight`, `italic`, `stretch`, `css`, `file`
   (absolute path, or null), `source` (`installed`, `adobe-fonts`, `not-installed`),
-  `note`, sometimes `licenseHint` (see below), and `look`: `sizePx`,
+  `note` (what to do when there's no file), sometimes `webFont` (`from`, `css`: a
+  stylesheet URL, for a font that isn't installed) and `licenseHint` (see below), and `look`: `sizePx`,
   `sizePercentOfFrameWidth`, `color`, `tracking` (1/1000 em) and
   `letterSpacingEm`, `leadingPx` and `lineHeightPx`, `stroke`, `shadow` (with
   `offsetXPx`/`offsetYPx`), `box`, `rotationDeg`, `position` (`xPercent`,
@@ -78,15 +100,24 @@ Rules:
 - **Use the exact names. Never substitute another font**, not even a "similar"
   one, and never quietly fall back. If a font can't be loaded by name or file,
   stop and tell the user which one and why.
-- **Load by name first, then from `file`.** `get_font_files` says whether each file
-  still exists.
+- **Load by name first (`fullName`, then `postscriptName`), then from `file`.**
+  `get_font_files` says whether each file still exists. A `file` under
+  `WindowsApps` (a font bundled in a Store app) usually can't be read or copied:
+  load it by name; if that fails, follow its `note` (official source, never a
+  guessed URL).
 - **Adobe Fonts (`source: "adobe-fonts"`) have no file:** load them by name only
   (CSS `local()`); they work in renders on this computer. Never copy or upload
   Creative Cloud's font files. ffmpeg's `subtitles`/ASS filter also takes a font
   by name (`force_style='FontName=…'`). If a tool can only take a file (ffmpeg
   `drawtext`, Pillow), say so and offer an HTML/Remotion render instead.
-- **`not-installed`:** a free Google font the user previewed without installing.
-  Ask them to install it (FontHound > Get fonts) or load it from Google Fonts.
+- **`not-installed`:** a free font the user previewed from FontHound's Get fonts
+  tab without installing it; `note` says what to do. With `webFont.from: "Google
+  Fonts"`: ask the user to install it in FontHound (Get fonts > Install), then
+  press Send to AI again, or load it from the `webFont.css` stylesheet. With
+  `webFont.from: "Fontsource"`: preview only in FontHound, it can't be installed
+  from there; load it from `webFont.css`, or ask the user to pick an installed
+  font. Without `webFont`: ask the user to install it. Never point to Google
+  Fonts for a font without `webFont.from: "Google Fonts"`.
 - **`licenseHint`** (`trial`, `demo`, `personal-use` or `non-commercial`): the
   font's file name or name table suggests a restricted licence. Tell the user
   briefly, once (for example: "Note: Option 2 looks like a trial font; it usually
@@ -94,9 +125,35 @@ Rules:
   refuse, don't swap it for another font, and don't repeat the warning.
 - **Scale the look with the frame:** `value * (your width / frame.width)`.
 - **Load the exact weight and style** (no faux bold or italic).
-- **Rendering in the cloud** (Remotion Lambda, a hosted renderer)? The font file must
-  be uploaded there: fine for open-licence fonts; for bought fonts the user must
-  check their licence; Adobe Fonts can't be uploaded. Say this plainly.
+- **Fonts and third parties.** The user is responsible for having the right
+  licence for every font they use; FontHound doesn't grant font licences. So:
+  - **Rendering on the user's computer:** load the picks by name or from the
+    font files (recipes below; copy a file into the project folder if the tool
+    wants it there). Say nothing about licences: no note, no question. (The
+    one-time `licenseHint` note above is the only exception.)
+  - **Any step that sends a font file to a third party** (a cloud renderer, a
+    hosted service, an upload, an API that receives the file): before that
+    step, call `get_font_files` and check each font's `licence.kind`.
+    - `open`: go ahead. One short line naming the licence is fine but not
+      required, e.g. "Option 2 is under the SIL Open Font License, so it can be
+      uploaded."
+    - `unknown` or `restricted-embedding`: STOP before sending anything and ask
+      the user to decide. It is the user's choice, never yours. Say:
+
+      > This step uploads the font file **<family style>** to **<service>**.
+      > Desktop font licences usually cover use on your own computers and may
+      > not include online services. Please check your licence
+      > (<licence.url, if there is one>). Reply **Continue** to upload it, or
+      > **Cancel** to keep it on your computer.
+
+      Upload only after an explicit "Continue" (or a clear yes to uploading).
+      Anything else, or no answer: don't upload. Never upload by default.
+      Ask once per font per task: after "Continue" for a font, don't ask about
+      that font again in the same task.
+    - `adobe-fonts`: never upload it. Say in one line that Adobe Fonts can't be
+      copied to other services, and offer to render on the user's computer or to
+      use another font.
+    - Never say a font may be uploaded unless its `licence.kind` is `open`.
 - Nothing from FontHound goes anywhere else: don't paste file paths into public
   places; they include the user's Windows account name.
 
@@ -107,7 +164,7 @@ HTML / CSS (and Remotion, which renders in Chromium on this computer):
 ```css
 @font-face {
   font-family: "Pick1";
-  src: local("JosefinSans-Bold"), local("Josefin Sans Bold"),
+  src: local("Josefin Sans Bold"), local("JosefinSans-Bold"),
        url("file:///C:/Users/me/AppData/Local/Microsoft/Windows/Fonts/JosefinSans-Bold.ttf");
   font-weight: 700; font-style: normal;
 }
@@ -123,8 +180,8 @@ HTML / CSS (and Remotion, which renders in Chromium on this computer):
 }
 ```
 
-In Remotion, a `file://` URL is blocked in the browser context; prefer
-`local()`, or copy an open-licence file into `public/` and use `staticFile()` with
+A `file://` URL is blocked in any page served over http (localhost included),
+so in Remotion prefer `local()`, or copy an open-licence file into `public/` and use `staticFile()` with
 `@remotion/fonts` `loadFont`. Wait for the font and fail loudly:
 
 ```ts
