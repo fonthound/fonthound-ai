@@ -79,16 +79,16 @@ mentions it once; nothing is blocked.
 From Claude's plugin directory: open `/plugin`, find **FontHound**, install.
 Plugins from the directory update automatically.
 
-Or from this repository, in Claude Code in a terminal:
+Or from this repository: paste this into Claude Code (the Claude desktop app
+or a terminal). Claude installs it for you; click **Allow** when it asks.
 
 ```
-/plugin marketplace add fonthound/fonthound-ai
-/plugin install fonthound@fonthound
+Install the FontHound plugin: add the marketplace fonthound/fonthound-ai, then install fonthound@fonthound.
 ```
 
-In the Claude desktop app, the `/plugin` command needs Claude Code's
-interactive terminal, so run these in a terminal instead (Command Prompt,
-PowerShell or Terminal), then start a new session in the app:
+Then start a new Claude session: the plugin loads there.
+
+By hand, in a terminal:
 
 ```
 claude plugin marketplace add fonthound/fonthound-ai
