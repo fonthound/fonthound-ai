@@ -1,7 +1,7 @@
 {
   "name": "fonthound",
   "displayName": "FontHound",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Pick the fonts by eye in FontHound (Windows app, free trial) whenever Claude makes something with text: videos, images, thumbnails, posters, slides. Claude then uses exactly those fonts and that look, in Remotion, HyperFrames, HTML, ffmpeg, Pillow and more. Local only.",
   "author": {
     "name": "FontHound",

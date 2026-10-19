@@ -28,11 +28,12 @@ installed font and no tool that recommends fonts.
 
 ## Requirements
 
-- **FontHound for Windows** on the same computer, licensed or in its trial
-  (free 14-day trial, no card: https://fonthound.app/download). FontHound is a
-  paid app ($9.90 a year after the trial); this plugin is free. A macOS version
-  of FontHound is coming; until then the plugin's tools only open FontHound on
-  Windows.
+- **FontHound for Windows** on the same computer, licensed or with a beta key
+  (free beta: https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin).
+  FontHound is a paid app ($9.90 a year); this plugin is free. A macOS version
+  of FontHound is coming (waitlist:
+  https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin);
+  until then the plugin's tools only open FontHound on Windows.
 - **Node.js** (the local server is one plain JavaScript file with no
   dependencies; Claude Code users usually have Node already).
 
@@ -45,13 +46,15 @@ installed font and no tool that recommends fonts.
   substituting a font.
 - **A small local MCP server** (`server/fonthound-mcp.js`, readable Node.js, no
   dependencies, started as `node ${CLAUDE_PLUGIN_ROOT}/server/fonthound-mcp.js`)
-  with four tools:
+  with five tools:
   - `get_font_selection`: the fonts you sent from FontHound and their look;
   - `get_font_files`: each picked font's file and whether it exists;
   - `open_fonthound`: opens FontHound on its Fonts tab with your text (and
     optionally a still from your video);
   - `wait_for_selection`: waits until you press Send to AI (5 minutes at a
-    time, then Claude checks in and waits again).
+    time, then Claude checks in and waits again);
+  - `fonthound_status`: whether FontHound is installed on this computer, so
+    Claude knows before it asks (it opens nothing).
 
 If a picked font looks like a trial, demo or personal-use file (from its file
 name or its name table), the selection says so (`licenseHint`) and Claude
@@ -174,8 +177,10 @@ collects nothing, and reads nothing from your conversations.
   the Windows shell to open it (it runs `explorer.exe` with the program's path,
   exactly like a double-click) and waits until that file is there; then it runs
   `fonthound.exe --mockup-line "<your text>" [--mockup-frame "<image>"]`,
-  which hands the line to the open FontHound and exits. On a Mac:
-  `open -a FontHound --args ...`. No shell, no PowerShell, no scripts, no
+  which hands the line to the open FontHound and exits. On a Mac: if
+  `FontHound.app` is in `/Applications` or `~/Applications`,
+  `open -a FontHound --args ...`. `fonthound_status` makes the same file
+  check (is `fonthound.exe` or `FontHound.app` there?) and starts nothing. No shell, no PowerShell, no scripts, no
   registry, no list of running programs: each program is started directly with
   plain arguments.
 
@@ -200,8 +205,9 @@ FontHound's privacy policy: https://fonthound.app/privacy.html
 
 ## Troubleshooting
 
-- **"FontHound isn't installed"**: install FontHound (free trial at
-  https://fonthound.app/download), then ask again.
+- **"FontHound isn't installed"**: install FontHound (free beta at
+  https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin), then
+  ask again.
 - **FontHound opens but without your text** (`opened-without-line`): type the
   text on the Fonts tab yourself; everything else works the same.
 - **FontHound doesn't open** (`not-opened`): open it from the Start menu, type
@@ -226,6 +232,13 @@ node --test
 
 ## Changes
 
+- **0.1.9**: a new read-only tool, `fonthound_status`, says whether FontHound
+  is installed (the same file check `open_fonthound` makes; it opens nothing and
+  sends nothing), so Claude checks before it asks. Without FontHound on Windows,
+  Claude says in one sentence what FontHound is and links the free beta (once
+  per conversation), then chooses the fonts itself; on a Mac it says FontHound
+  is Windows-only for now, links the Mac waitlist and chooses the fonts.
+  `open_fonthound` gives the same messages instead of the old trial link.
 - **0.1.8**: follows FontHound 0.8.4, where the Get fonts tab became the Fonts
   tab's Free / All switch: a free font that isn't installed yet is installed from
   Fonts tab > Free > Install.

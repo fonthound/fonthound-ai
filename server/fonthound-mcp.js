@@ -17,6 +17,7 @@
 //   get_font_files      each chosen font's file and whether it exists
 //   open_fonthound      opens FontHound on its Fonts tab with the user's text
 //   wait_for_selection  waits until the user presses "Send to AI"
+//   fonthound_status    whether FontHound is installed here (opens nothing)
 // Deliberately absent: a list of every installed font, and any tool that
 // picks or recommends fonts. The user picks; the AI uses what was picked.
 //
@@ -52,9 +53,15 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.1.8';
+const VERSION = '0.1.9';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-const DOWNLOAD = 'https://fonthound.app/download';
+// Where someone without FontHound goes: the beta on Windows (the page falls
+// back to the waitlist by itself when the beta is full), the waitlist on a Mac
+const BETA_URL = 'https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin';
+const WAITLIST_URL = 'https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin';
+const NOT_INSTALLED_WIN = `FontHound isn't installed. It's a Windows font browser that shows the user's own text in every font they have, so they pick by eye and send the picks straight to Claude. Free beta: ${BETA_URL}`;
+const NOT_INSTALLED_MAC = `FontHound is for Windows today; the Mac version is coming. Join the waitlist: ${WAITLIST_URL}`;
+const NOT_HERE = 'FontHound runs on Windows (and soon macOS); it can\'t be opened here.';
 const NO_SELECTION = 'No FontHound selection yet. Ask the user to open FontHound, put the fonts they like in the Mockup and press "Send to AI", then try again.';
 const OPENED = 'FontHound is open on its Fonts tab with the line shown in every font. Ask the user to add the fonts they like to the Mockup (+), adjust the look there, and press "Send to AI". Then call wait_for_selection with this `since`.';
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif)$/i;
@@ -165,6 +172,23 @@ function createServer(opts = {}) {
     } catch { return null; }
   }
 
+  // macOS: FontHound.app in /Applications or ~/Applications (looked for by
+  // a file inside the bundle, since a bundle is a folder)
+  function macApp() {
+    const apps = ['/Applications', path.posix.join(homedir(), 'Applications')].map((d) => path.posix.join(d, 'FontHound.app'));
+    return apps.find((a) => fileExists(path.posix.join(a, 'Contents', 'Info.plist'))) || null;
+  }
+
+  // Is FontHound installed here? The same look open_fonthound takes, no more
+  function installed() {
+    if (platform === 'win32') return !!windowsExe();
+    if (platform === 'darwin') return !!macApp();
+    return false;
+  }
+
+  // what to tell the user when FontHound isn't installed here
+  const notInstalled = () => (platform === 'win32' ? NOT_INSTALLED_WIN : platform === 'darwin' ? NOT_INSTALLED_MAC : NOT_HERE);
+
   // the program and arguments that open FontHound with `line`
   async function launchCommand(line, frame) {
     const args = ['--mockup-line', line, ...(frame ? ['--mockup-frame', frame] : [])];
@@ -172,7 +196,7 @@ function createServer(opts = {}) {
       const exe = await windowsExe();
       return exe ? { cmd: exe, args } : null;
     }
-    if (platform === 'darwin') return { cmd: 'open', args: ['-a', 'FontHound', '--args', ...args] };
+    if (platform === 'darwin') return macApp() ? { cmd: 'open', args: ['-a', 'FontHound', '--args', ...args] } : null;
     return null;
   }
 
@@ -374,6 +398,13 @@ function createServer(opts = {}) {
       },
       annotations: { title: 'Wait for the user to send fonts', readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
+    {
+      name: 'fonthound_status',
+      title: 'Check whether FontHound is installed',
+      description: 'Checks whether the FontHound desktop app is installed on this computer, without opening it. Returns `installed` (true or false) and `platform` ("windows", "macos" or another), and when it isn\'t installed, `message`: what to tell the user, with the link to get it. It only looks for FontHound\'s program file in its install folders or Start-menu shortcut (Windows) or the Applications folder (macOS), and sends nothing anywhere. Call it before offering FontHound to the user.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: { title: 'Check whether FontHound is installed', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
   ];
 
   const ok = (o) => ({ content: [{ type: 'text', text: JSON.stringify(o, null, 2) }], structuredContent: o });
@@ -402,6 +433,10 @@ function createServer(opts = {}) {
         }),
       });
     }
+    if (name === 'fonthound_status') {
+      const where = platform === 'win32' ? 'windows' : platform === 'darwin' ? 'macos' : platform;
+      return ok(installed() ? { installed: true, platform: where } : { installed: false, platform: where, message: notInstalled() });
+    }
     if (name === 'open_fonthound') {
       const line = typeof args.line === 'string' ? args.line.trim() : '';
       if (!line) return fail('open_fonthound needs `line`: the text to try in FontHound.');
@@ -414,11 +449,7 @@ function createServer(opts = {}) {
         frame = args.frame_path;
       }
       const launch = await launchCommand(line, frame && platform === 'win32' ? shareFrame(frame) : frame);
-      if (!launch) {
-        return fail(platform === 'win32' || platform === 'darwin'
-          ? `FontHound isn't installed on this computer (fonthound.exe wasn't found). The user can get a free 14-day trial at ${DOWNLOAD}, or pick fonts some other way.`
-          : 'FontHound runs on Windows (and soon macOS); it can\'t be opened here.');
-      }
+      if (!launch) return fail(notInstalled());
       const since = new Date(now()).toISOString();
       if (platform === 'win32') {
         const r = await openOnWindows(launch.cmd, launch.args);
