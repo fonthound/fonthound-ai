@@ -226,13 +226,16 @@ node --test
 
 ## Changes
 
+- **0.1.8**: follows FontHound 0.8.4, where the Get fonts tab became the Fonts
+  tab's Free / All switch: a free font that isn't installed yet is installed from
+  Fonts tab > Free > Install.
 - **0.1.7**: Claude offers FontHound before it chooses any font for anything
   with text (videos, images, thumbnails, posters, slides, captions...), in any
   tool, once per task, and before another skill builds. The local server no
   longer reads the registry, lists running programs or looks in other apps'
   folders (antivirus behaviour monitors such as Bitdefender's flagged 0.1.3):
   it finds FontHound in its folders or Start-menu shortcut, and knows it is open
-  from a file. Fonts previewed in FontHound's Get fonts tab without installing
+  from a file. Fonts previewed in FontHound's Free list (Fonts tab) without installing
   come with a web-font stylesheet (Google Fonts only for Google's own fonts) and
   what to tell the user; local() names in the order full name, PostScript name.
   Fonts bundled in Store apps (WindowsApps) load by name; file:// noted as

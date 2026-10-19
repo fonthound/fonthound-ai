@@ -110,13 +110,10 @@ Rules:
   Creative Cloud's font files. ffmpeg's `subtitles`/ASS filter also takes a font
   by name (`force_style='FontName=…'`). If a tool can only take a file (ffmpeg
   `drawtext`, Pillow), say so and offer an HTML/Remotion render instead.
-- **`not-installed`:** a free font the user previewed from FontHound's Get fonts
-  tab without installing it; `note` says what to do. With `webFont.from: "Google
-  Fonts"`: ask the user to install it in FontHound (Get fonts > Install), then
-  press Send to AI again, or load it from the `webFont.css` stylesheet. With
-  `webFont.from: "Fontsource"`: preview only in FontHound, it can't be installed
-  from there; load it from `webFont.css`, or ask the user to pick an installed
-  font. Without `webFont`: ask the user to install it. Never point to Google
+- **`not-installed`:** a free font the user previewed in FontHound (the Fonts
+  tab's Free or All list) without installing it; `note` says what to do. Ask the
+  user to install it in FontHound (Fonts tab > Free > Install), then press Send
+  to AI again, or load it from the `webFont.css` stylesheet if there is one. Without `webFont`: ask the user to install it. Never point to Google
   Fonts for a font without `webFont.from: "Google Fonts"`.
 - **`licenseHint`** (`trial`, `demo`, `personal-use` or `non-commercial`): the
   font's file name or name table suggests a restricted licence. Tell the user
