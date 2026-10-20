@@ -30,8 +30,8 @@ mention the check). Then:
   words, then carry on choosing the fonts yourself, e.g.:
 
   > FontHound is a Windows font browser that shows your text in every font you
-  > have, so you pick by eye and send the picks to me. It has a free beta:
-  > https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin, or
+  > have, so you pick by eye and send the picks to me. It has a free 14-day trial:
+  > https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin, or
   > I'll choose the fonts myself.
 
   Don't wait for an answer unless they want to try it.
@@ -85,8 +85,8 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
    the user you're still waiting for **Send to AI** (or ask whether they're done),
    then call `wait_for_selection` again with the same `since`.
 4. If `open_fonthound` says FontHound isn't installed, pass its message on to
-   the user in one sentence (on Windows the free beta,
-   https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin; on a Mac
+   the user in one sentence (on Windows the free 14-day trial,
+   https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin; on a Mac
    the waitlist), then choose the fonts yourself and carry on; don't offer
    FontHound again in this conversation.
    If it returns `status: "not-opened"`, ask the user to open FontHound from the
@@ -267,5 +267,5 @@ their clipboard as Markdown, which they can paste.
 
 If there's no file, or it has no fonts, tell the user: "Open FontHound, put the
 fonts you like in the Mockup, press Send to AI, and tell me when you're done."
-FontHound needs a licence or a beta key (free beta:
-https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin).
+FontHound needs a licence or a trial key (free 14-day trial:
+https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin).

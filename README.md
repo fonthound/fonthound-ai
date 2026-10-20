@@ -28,8 +28,8 @@ installed font and no tool that recommends fonts.
 
 ## Requirements
 
-- **FontHound for Windows** on the same computer, licensed or with a beta key
-  (free beta: https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin).
+- **FontHound for Windows** on the same computer, licensed or in its trial
+  (free 14-day trial: https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin).
   FontHound is a paid app ($9.90 a year); this plugin is free. A macOS version
   of FontHound is coming (waitlist:
   https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin);
@@ -205,8 +205,8 @@ FontHound's privacy policy: https://fonthound.app/privacy.html
 
 ## Troubleshooting
 
-- **"FontHound isn't installed"**: install FontHound (free beta at
-  https://fonthound.app/beta?utm_source=claude-plugin&utm_medium=plugin), then
+- **"FontHound isn't installed"**: install FontHound (free 14-day trial at
+  https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin), then
   ask again.
 - **FontHound opens but without your text** (`opened-without-line`): type the
   text on the Fonts tab yourself; everything else works the same.
@@ -232,10 +232,13 @@ node --test
 
 ## Changes
 
+- **0.1.10**: FontHound has launched: without FontHound, Claude links the free
+  14-day trial (fonthound.app/download, which offers the Mac waitlist on a Mac)
+  instead of the beta, which has ended.
 - **0.1.9**: a new read-only tool, `fonthound_status`, says whether FontHound
   is installed (the same file check `open_fonthound` makes; it opens nothing and
   sends nothing), so Claude checks before it asks. Without FontHound on Windows,
-  Claude says in one sentence what FontHound is and links the free beta (once
+  Claude says in one sentence what FontHound is and links the beta (the trial since 0.1.10) (once
   per conversation), then chooses the fonts itself; on a Mac it says FontHound
   is Windows-only for now, links the Mac waitlist and chooses the fonts.
   `open_fonthound` gives the same messages instead of the old trial link.
