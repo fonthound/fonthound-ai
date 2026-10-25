@@ -18,6 +18,9 @@
 //   open_fonthound      opens FontHound on its Fonts tab with the user's text
 //   wait_for_selection  waits until the user presses "Send to AI"
 //   fonthound_status    whether FontHound is installed here (opens nothing)
+//   offer_font_picking  the same check, as the step before any font is chosen:
+//                       the question to ask the user (its description is the trigger)
+// and one prompt, pick-fonts ("Pick fonts with FontHound").
 // Deliberately absent: a list of every installed font, and any tool that
 // picks or recommends fonts. The user picks; the AI uses what was picked.
 //
@@ -53,7 +56,7 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.1.10';
+const VERSION = '0.2.0';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 // Where someone without FontHound goes: the free 14-day trial at /download (on a
 // Mac the same page offers the Mac waitlist instead)
@@ -63,6 +66,35 @@ const NOT_INSTALLED_MAC = `FontHound is for Windows today; the Mac version is co
 const NOT_HERE = 'FontHound runs on Windows (and soon macOS); it can\'t be opened here.';
 const NO_SELECTION = 'No FontHound selection yet. Ask the user to open FontHound, put the fonts they like in the Mockup and press "Send to AI", then try again.';
 const OPENED = 'FontHound is open on its Fonts tab with the line shown in every font. Ask the user to add the fonts they like to the Mockup (+), adjust the look there, and press "Send to AI". Then call wait_for_selection with this `since`.';
+// What Claude reads when it connects: the skill's rules in short, for the
+// places that load no skill (the Claude desktop app's chat). The same text
+// as INSTRUCTIONS in src-tauri/src/mcp.rs (fonthound --mcp).
+const INSTRUCTIONS = [
+  "FontHound is a font browser on the user's computer: they see their own text in their own installed fonts and pick by eye. These tools hand you exactly the fonts they picked.",
+  "- Before you choose a font for anything with text (a video, image, thumbnail, poster, slide, logo, captions, a mockup's headlines), call offer_font_picking first. Installed: ask its question once per task, \"Want to pick the fonts by eye in FontHound?\" Not installed: pass on its message once per conversation, then choose the fonts yourself.",
+  "- Don't ask again in a conversation where the user said no or \"you choose\", or when the fonts are already fixed (a brand font they named, a template whose fonts they keep).",
+  "- Yes: call open_fonthound with the text exactly as it will appear (and frame_path, a still of the work, if you have one). Tell the user to add the fonts they like to the Mockup (+) and press Send to AI, then call wait_for_selection with the returned since. On \"timeout\", call get_font_selection: if its sent is after since, use it; otherwise say you're still waiting and call wait_for_selection again with the same since.",
+  "- The picks fix the typeface: use the exact family, weight and style, and never substitute a font or quietly fall back. Still design the piece fully as you normally would (background, layout, palette, composition, supporting elements) for what the user asked. From `look`, keep only what the user styled (`look.styled`, the frame's `styled`: their own still or colour); the rest are FontHound's defaults, a starting point, not a spec. One option: use it. Several: ask whether to use one for everything, split them, or make a version with each.",
+  "- Load fonts by name first (fullName, then postscriptName), then from file, in the exact weight and style. Adobe Fonts (source \"adobe-fonts\") load by name only. Scale what you take from the look by your width / frame.width.",
+  "- licenseHint: tell the user once, briefly, then carry on with the font.",
+  "- Before sending a font file to any third party (a cloud renderer, an upload), call get_font_files: only licence.kind \"open\" may go. Otherwise ask the user to reply Continue or Cancel, and never upload by default; Adobe Fonts never.",
+  "- This server never chooses or recommends fonts: the user picks, you use what was picked.",
+].join('\n');
+// offer_font_picking: what Claude asks, and what it does next
+const ASK = 'Want to pick the fonts by eye in FontHound?';
+const NEXT_YES = 'If yes: call open_fonthound with the text exactly as it will appear (and frame_path, a still of the work, if you have one), tell the user to add the fonts they like to the Mockup (+) and press Send to AI, then call wait_for_selection with the returned `since` and use exactly the fonts that come back. If no: choose the fonts yourself and don\'t offer FontHound again in this conversation.';
+const NEXT_NOT_INSTALLED = 'Say this once, in a few words, then choose the fonts yourself; don\'t offer FontHound again in this conversation.';
+// the one MCP prompt: "Pick fonts with FontHound" (a client may list it in its menu)
+const PROMPTS = [{
+  name: 'pick-fonts',
+  title: 'Pick fonts with FontHound',
+  description: 'Pick the fonts for what Claude makes by eye in FontHound, on your own text, before Claude chooses any.',
+  arguments: [{ name: 'text', description: 'The text to try in the fonts (a title, headline or caption). Optional.', required: false }],
+}];
+function promptText(text) {
+  const what = text ? `this text: "${text}"` : 'the main text of what we\'re making';
+  return `Before you choose any fonts for what we're making, open FontHound with ${what}, so I can pick the fonts by eye. Use open_fonthound, wait for my Send to AI with wait_for_selection, then use exactly the fonts I send.`;
+}
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif)$/i;
 // wait_for_selection: picking fonts by eye takes a while, but a chat waiting
 // on a tool shows little, so one wait is short and Claude calls again
@@ -355,9 +387,16 @@ function createServer(opts = {}) {
 
   const TOOLS = [
     {
+      name: 'offer_font_picking',
+      title: 'Offer to pick the fonts in FontHound',
+      description: 'Use BEFORE you choose any font for something you make that shows text: a poster, flyer, ad, thumbnail, social post, banner, slide or deck, logo or wordmark, video titles or captions, an image, an HTML/CSS page, an artifact or a design mockup. The user has FontHound, a font browser on this computer where they see their own text in their own installed fonts and pick by eye. Call this first (it opens nothing and sends nothing): it returns `ask`, one short question to put to the user, or `message` when FontHound isn\'t installed (say it once, then choose the fonts yourself). If the user says yes, call open_fonthound with the text, then wait_for_selection, and use exactly the fonts that come back. Don\'t call it again in a conversation where the user said no or "you choose", or when the fonts are already fixed (a brand font they named, a template whose fonts they keep).',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: { title: 'Offer to pick the fonts in FontHound', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
       name: 'get_font_selection',
       title: 'Get the fonts picked in FontHound',
-      description: 'Returns the fonts the user picked by eye in FontHound\'s Mockup (options 1-5): family, style, PostScript name, CSS font-family/weight/style, font file path (none for Adobe Fonts: load those by name only), and the look (size in px of the frame and % of frame width, colour, tracking, leading, stroke, shadow, background box, rotation, position), `licenseHint` when the font file looks like a trial, demo or personal-use font (tell the user once, then go on), plus the title line, the frame size and `sent` (when Send to AI was last pressed). Use these exact fonts; never substitute.',
+      description: 'Returns the fonts the user picked by eye in FontHound\'s Mockup (options 1-5): family, style, PostScript name, CSS font-family/weight/style, font file path (none for Adobe Fonts: load those by name only), and the look (size in px of the frame and % of frame width, colour, tracking, leading, stroke, shadow, background box, rotation, position), `licenseHint` when the font file looks like a trial, demo or personal-use font (tell the user once, then go on), plus the title line, the frame size and `sent` (when Send to AI was last pressed). Use these exact fonts; never substitute. The fonts are fixed; the look is a starting point: `styled` lists what the user set for this piece (the rest are defaults), and you design the rest as the request asks.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { title: 'Get the fonts picked in FontHound', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -431,6 +470,12 @@ function createServer(opts = {}) {
           };
         }),
       });
+    }
+    if (name === 'offer_font_picking') {
+      const where = platform === 'win32' ? 'windows' : platform === 'darwin' ? 'macos' : platform;
+      return ok(installed()
+        ? { installed: true, platform: where, ask: ASK, next: NEXT_YES }
+        : { installed: false, platform: where, message: notInstalled(), next: NEXT_NOT_INSTALLED });
     }
     if (name === 'fonthound_status') {
       const where = platform === 'win32' ? 'windows' : platform === 'darwin' ? 'macos' : platform;
@@ -530,13 +575,20 @@ function createServer(opts = {}) {
         const asked = msg.params && msg.params.protocolVersion;
         return reply({
           protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0],
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
           serverInfo: { name: NAME, title: 'FontHound', version: VERSION },
-          instructions: 'Fonts the user picked by eye in FontHound. Use them exactly; never substitute or choose fonts from this server.',
+          instructions: INSTRUCTIONS,
         });
       }
       case 'ping': return reply({});
       case 'tools/list': return reply({ tools: TOOLS });
+      case 'prompts/list': return reply({ prompts: PROMPTS });
+      case 'prompts/get': {
+        const p = msg.params || {};
+        if (p.name !== 'pick-fonts') return error(-32602, `Unknown prompt: ${p.name}`);
+        const text = p.arguments && typeof p.arguments.text === 'string' ? p.arguments.text.trim() : '';
+        return reply({ description: PROMPTS[0].description, messages: [{ role: 'user', content: { type: 'text', text: promptText(text) } }] });
+      }
       case 'tools/call': {
         const p = msg.params || {};
         const token = p._meta && p._meta.progressToken;
@@ -554,7 +606,7 @@ function createServer(opts = {}) {
     }
   }
 
-  return { handle, callTool, TOOLS, selectionFile, launchCommand, readSelection, shortcutTarget, fontLicence };
+  return { handle, callTool, TOOLS, PROMPTS, selectionFile, launchCommand, readSelection, shortcutTarget, fontLicence };
 }
 
 // stdio: one JSON message per line in, one per line out; logs go to stderr

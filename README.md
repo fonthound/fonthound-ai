@@ -30,12 +30,14 @@ installed font and no tool that recommends fonts.
 
 - **FontHound for Windows** on the same computer, licensed or in its trial
   (free 14-day trial: https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin).
-  FontHound is a paid app ($9.90 a year); this plugin is free. A macOS version
-  of FontHound is coming (waitlist:
+  FontHound is a paid app ($9.90 a year). A macOS version of FontHound is
+  coming (waitlist:
   https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin);
-  until then the plugin's tools only open FontHound on Windows.
-- **Node.js** (the local server is one plain JavaScript file with no
-  dependencies; Claude Code users usually have Node already).
+  until then the plugin works on Windows only.
+- **Nothing else.** FontHound 1.0.1 or newer runs the plugin's server itself
+  (`fonthound.exe --mcp`), so no Node.js is needed. With an older FontHound, the
+  plugin uses its own JavaScript server instead, which needs Node.js; updating
+  FontHound removes that need.
 
 ## What's inside
 
@@ -44,17 +46,31 @@ installed font and no tool that recommends fonts.
   how to read your selection, and how to load the fonts (CSS `local()`,
   `@font-face` with the file, Remotion, ffmpeg `drawtext`, Pillow), never
   substituting a font.
-- **A small local MCP server** (`server/fonthound-mcp.js`, readable Node.js, no
-  dependencies, started as `node ${CLAUDE_PLUGIN_ROOT}/server/fonthound-mcp.js`)
-  with five tools:
+- **A prompt hook** (`hooks/hooks.json`): with every prompt, Claude Code adds
+  one short line telling Claude to follow the FontHound skill if the request
+  will make it choose a font for visible text, in any language and any tool,
+  and to ignore it otherwise. The skill alone was picked up only sometimes. The
+  hook is a plain `echo` of that line: it runs no program, reads nothing, sends
+  nothing and never blocks the prompt.
+- **A local MCP server.** Claude Code starts `server/fonthound.cmd`, a short
+  launcher that runs FontHound's own program as the server
+  (`fonthound.exe --mcp`). With a FontHound older than 1.0.1 it runs
+  `server/fonthound-mcp.js` (readable Node.js, no dependencies) with Node.js
+  instead; both give the same five tools:
   - `get_font_selection`: the fonts you sent from FontHound and their look;
   - `get_font_files`: each picked font's file and whether it exists;
   - `open_fonthound`: opens FontHound on its Fonts tab with your text (and
     optionally a still from your video);
   - `wait_for_selection`: waits until you press Send to AI (5 minutes at a
     time, then Claude checks in and waits again);
-  - `fonthound_status`: whether FontHound is installed on this computer, so
-    Claude knows before it asks (it opens nothing).
+  - `offer_font_picking`: the step before Claude chooses any font for something
+    with text: whether FontHound is installed, and the one question to ask you
+    (it opens nothing);
+  - `fonthound_status`: whether FontHound is installed on this computer (it
+    opens nothing).
+
+  And one prompt, **Pick fonts with FontHound**, for apps that list prompts in
+  their menu.
 
 If a picked font looks like a trial, demo or personal-use file (from its file
 name or its name table), the selection says so (`licenseHint`) and Claude
@@ -108,20 +124,23 @@ switch on **auto-update** once; or update by hand with
 
 ### Other AI apps (MCP)
 
-The same local server works in any app that supports MCP. Download this
-repository (Code → Download ZIP, or `git clone https://github.com/fonthound/fonthound-ai`),
-put it somewhere permanent, and point the app at `server/fonthound-mcp.js`.
-Replace `PATH` below with that folder (on Windows use forward slashes, e.g.
-`C:/Tools/fonthound-ai`). Then ask: "Use the fonts I picked in FontHound."
+FontHound works with **Claude Code** (the terminal, the VS Code extension and
+the Claude desktop app's Code tab). FontHound Setup adds this plugin for you
+when you keep **Claude Code** ticked.
 
-**Claude Desktop** (Settings → Developer → Edit Config, `claude_desktop_config.json`),
+The same server works in any app that supports MCP: point the app at
+FontHound's program with the argument `--mcp`. Replace `EXE` below with its
+path, by default `C:/Users/<you>/AppData/Local/Programs/FontHound/fonthound.exe`
+or `C:/Program Files/FontHound/fonthound.exe` (forward slashes). Then ask:
+"Use the fonts I picked in FontHound."
+
 **Cursor** (`~/.cursor/mcp.json`), **Windsurf** (`~/.codeium/windsurf/mcp_config.json`)
 and **Gemini CLI** (`~/.gemini/settings.json`):
 
 ```json
 {
   "mcpServers": {
-    "fonthound": { "command": "node", "args": ["PATH/server/fonthound-mcp.js"] }
+    "fonthound": { "command": "EXE", "args": ["--mcp"] }
   }
 }
 ```
@@ -132,7 +151,7 @@ user `mcp.json`):
 ```json
 {
   "servers": {
-    "fonthound": { "type": "stdio", "command": "node", "args": ["PATH/server/fonthound-mcp.js"] }
+    "fonthound": { "type": "stdio", "command": "EXE", "args": ["--mcp"] }
   }
 }
 ```
@@ -141,12 +160,17 @@ user `mcp.json`):
 
 ```toml
 [mcp_servers.fonthound]
-command = "node"
-args = ["PATH/server/fonthound-mcp.js"]
+command = "EXE"
+args = ["--mcp"]
 ```
 
-Only Claude Code uses the skill, so only there does Claude offer FontHound on
-its own; elsewhere, ask for your FontHound fonts. The tools are the same.
+With a FontHound older than 1.0.1, use Node.js and this repository's
+`server/fonthound-mcp.js` instead (`"command": "node", "args": ["PATH/server/fonthound-mcp.js"]`).
+
+Claude Code uses the skill; the server also gives every app a short version
+of it (its MCP instructions), so Claude offers FontHound on its own there too
+where the app passes them on. Elsewhere, ask for your FontHound fonts. The
+tools are the same.
 
 ### Chat apps without MCP
 
@@ -168,6 +192,15 @@ collects nothing, and reads nothing from your conversations.
   font file's licence fields (its licence text and URL, and its embedding
   flag) to say whether the font is under an open licence. FontHound deletes the file when you empty the Mockup, and
   writes it only while it is licensed or in its trial.
+- **Adds one line to each prompt** (the hook above): an `echo` of a fixed
+  sentence; your prompt isn't read or stored.
+- **Starts the server.** `server/fonthound.cmd` reads the path FontHound
+  wrote for it (`%APPDATA%\FontHound\app-path.txt`), else looks in
+  FontHound's install folders, and runs `fonthound.exe --mcp` when the file
+  `claude\fonthound-mcp.txt` is beside it (the sign of a FontHound that has the
+  server). Otherwise it runs `node server/fonthound-mcp.js` if Node.js is
+  installed, or stops with a message. It only checks files and starts one
+  program. The server is the same either way, as described below.
 - **Runs FontHound, and only when Claude calls `open_fonthound`.** On Windows,
   the server finds `fonthound.exe` in FontHound's install folders
   (`%LOCALAPPDATA%\Programs\FontHound`, `C:\Program Files\FontHound`), or
@@ -180,7 +213,7 @@ collects nothing, and reads nothing from your conversations.
   which hands the line to the open FontHound and exits. On a Mac: if
   `FontHound.app` is in `/Applications` or `~/Applications`,
   `open -a FontHound --args ...`. `fonthound_status` makes the same file
-  check (is `fonthound.exe` or `FontHound.app` there?) and starts nothing. No shell, no PowerShell, no scripts, no
+  check (is `fonthound.exe` or `FontHound.app` there?) and starts nothing. The server itself uses no shell, no PowerShell, no
   registry, no list of running programs: each program is started directly with
   plain arguments.
 
@@ -205,6 +238,10 @@ FontHound's privacy policy: https://fonthound.app/privacy.html
 
 ## Troubleshooting
 
+- **Claude has no FontHound tools** (`/mcp` shows `fonthound` as failed):
+  update FontHound to 1.0.1 or newer (it offers the update when it opens, or
+  https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin),
+  then restart Claude Code. With an older FontHound the plugin needs Node.js.
 - **"FontHound isn't installed"**: install FontHound (free 14-day trial at
   https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin), then
   ask again.
@@ -231,6 +268,22 @@ node --test
 (the tests use them).
 
 ## Changes
+
+- **0.2.0** (continued): a prompt hook adds one constant line to every prompt,
+  so Claude asks about FontHound for every job that chooses fonts, not only
+  sometimes; Claude judges relevance itself, in any language.
+- **0.2.0** (continued): a new read-only tool, `offer_font_picking`, whose
+  description tells Claude to offer FontHound before it chooses any font, and a
+  prompt, "Pick fonts with FontHound" (in Claude Code, a slash command). The skill
+  now says the picks fix the typeface and Claude still designs the piece; the
+  Mockup's look is a starting point (`look.styled` says what the user set).
+- **0.2.0**: no Node.js needed. The plugin starts FontHound's own program as
+  its server (`fonthound.exe --mcp`, FontHound 1.0.1 or newer) through a short
+  launcher, `server/fonthound.cmd`; with an older FontHound it uses the
+  JavaScript server as before (that needs Node.js). The server now gives Claude
+  the skill's rules in short (MCP instructions), for apps that load no skill.
+  If FontHound's tools aren't there, Claude says once how to connect FontHound
+  (install or update it), then chooses the fonts itself.
 
 - **0.1.10**: FontHound has launched: without FontHound, Claude links the free
   14-day trial (fonthound.app/download, which offers the Mac waitlist on a Mac)

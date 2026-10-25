@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "fonthound": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/fonthound-mcp.js"]
+      "command": "${CLAUDE_PLUGIN_ROOT}/server/fonthound.cmd"
     }
   }
 }

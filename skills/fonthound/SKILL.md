@@ -17,8 +17,9 @@ options with a look (size, colour, tracking, stroke, shadow, box, position).
 Whenever you are about to pick a font yourself, for anything with text (video,
 motion graphics, GIF, image, thumbnail, poster, ad, social post, banner, slide or
 deck, logo or wordmark text, captions, lower thirds, a UI mockup's headlines,
-a chart's title), and in any tool, first call `fonthound_status` (silently: don't
-mention the check). Then:
+a chart's title), and in any tool, first call `offer_font_picking` (silently: don't
+mention the check; with an older server, `fonthound_status` gives the same answer
+without `ask`). Then:
 
 - **`installed: true`:** ask one short question:
 
@@ -39,8 +40,18 @@ mention the check). Then:
   the fonts yourself: "FontHound is for Windows today; the Mac version is coming
   (waitlist: https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin),
   so I'll choose the fonts."
-- **Anywhere else, or the tool isn't available:** choose fonts as you normally
-  would and carry on (without the tool, you may still ask the question above).
+- **The FontHound tools aren't there** (no `offer_font_picking` or `fonthound_status`
+  among your tools):
+  FontHound isn't connected to Claude on this computer yet. On Windows, say it
+  once, in a few words, then choose the fonts yourself, e.g.:
+
+  > To pick fonts by eye in FontHound, install or update FontHound
+  > (https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin)
+  > and keep Claude Code ticked in its Setup, then restart Claude Code. For now I'll
+  > choose the fonts.
+
+  On a Mac, the Mac sentence above instead. Mention it once per conversation.
+- **Anywhere else:** choose fonts as you normally would and carry on.
 - **They already picked** ("use my FontHound fonts", or a selection came in
   this conversation): skip the question and go to step 3.
 
@@ -94,12 +105,14 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
    returns `status: "opened-without-line"`, FontHound is open: ask the user to
    type the text on its Fonts tab, then wait as in step 3.
 
-## 3. Use the selection exactly
+## 3. Use the fonts exactly, and design the piece
 
 `get_font_selection` (or `wait_for_selection`) returns:
 
 - `line`, `direction` (`rtl` for Hebrew/Arabic), `frame` (`width`, `height`: the
-  frame the look was designed on; px values are in its pixels).
+  frame the look was designed on; px values are in its pixels; `background`, its
+  colour; `styled`: `image` when the user put a still of their own work behind
+  the text, `background` when they chose its colour).
 - `fonts[]`, options 1-5 in the user's order. **One option: use it. Two or more:
   don't pick one yourself.** The user sent several on purpose (to compare, or for
   different parts), so ask before rendering, listing them by number and name, e.g.
@@ -114,11 +127,27 @@ those in FontHound"). The user picks the actual fonts by eye in FontHound.
   `sizePercentOfFrameWidth`, `color`, `tracking` (1/1000 em) and
   `letterSpacingEm`, `leadingPx` and `lineHeightPx`, `stroke`, `shadow` (with
   `offsetXPx`/`offsetYPx`), `box`, `rotationDeg`, `position` (`xPercent`,
-  `yPercent` of the text's centre).
+  `yPercent` of the text's centre), and `styled`: which of these the user changed
+  from FontHound's defaults (`size`, `color`, `position`, `rotation`,
+  `tracking`, `leading`, `stroke`, `shadow`, `box`; empty: all defaults).
 - `sent`: when the user last pressed Send to AI.
 
 Rules:
 
+- **The picks fix the typeface; you still design the piece.** Use the exact
+  family, weight and style, and otherwise make the thing as well as you would
+  have without FontHound: background, layout, colour palette, composition,
+  hierarchy, supporting text and shapes, imagery, animation, all from what the
+  user asked for. A title card is a designed card, not the word on a plain page.
+- **The `look` is a starting point, not a spec.** Keep what the user styled for
+  this piece: the fields in `look.styled` (a colour, stroke, shadow, box, size or
+  position they set) and the frame's `styled` (their own still: design around it;
+  a colour they chose: use it). Fields that aren't in `styled` are FontHound's
+  defaults (its standard size and colour, centred, no effects): don't let them
+  flatten the design. When there is no `styled` field (an older FontHound), treat
+  a centred line in the default size with no effects the same way. If you're
+  unsure, design it, and say in one line that the look can be matched to the
+  Mockup exactly if they want.
 - **Use the exact names. Never substitute another font**, not even a "similar"
   one, and never quietly fall back. If a font can't be loaded by name or file,
   stop and tell the user which one and why.
@@ -142,7 +171,7 @@ Rules:
   briefly, once (for example: "Note: Option 2 looks like a trial font; it usually
   can't be used in commercial work until bought."), then carry on with it. Don't
   refuse, don't swap it for another font, and don't repeat the warning.
-- **Scale the look with the frame:** `value * (your width / frame.width)`.
+- **Scale what you take from the look with the frame:** `value * (your width / frame.width)`.
 - **Load the exact weight and style** (no faux bold or italic).
 - **Fonts and third parties.** The user is responsible for having the right
   licence for every font they use; FontHound doesn't grant font licences. So:

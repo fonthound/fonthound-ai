@@ -1,0 +1,16 @@
+{
+  "description": "FontHound: one short line with every prompt, so Claude follows the FontHound skill whenever it is about to choose a font for visible text. It runs no program (echo only), reads nothing, sends nothing and never blocks the prompt.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'FontHound: if this will make you choose a font for visible text (any language or tool), first follow the FontHound skill: call offer_font_picking and ask once, unless fonts are already chosen or the user declined. Otherwise ignore.'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
