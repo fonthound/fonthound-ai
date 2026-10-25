@@ -56,7 +56,7 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 // Where someone without FontHound goes: the free 14-day trial at /download (on a
 // Mac the same page offers the Mac waitlist instead)

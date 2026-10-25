@@ -269,6 +269,7 @@ node --test
 
 ## Changes
 
+- **0.2.1**: the directory description now says it's for Claude Code with FontHound for Windows.
 - **0.2.0** (continued): a prompt hook adds one constant line to every prompt,
   so Claude asks about FontHound for every job that chooses fonts, not only
   sometimes; Claude judges relevance itself, in any language.
