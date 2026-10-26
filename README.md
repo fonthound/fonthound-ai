@@ -29,8 +29,8 @@ installed font and no tool that recommends fonts.
 ## Requirements
 
 - **FontHound for Windows** on the same computer, licensed or in its trial
-  (free 14-day trial: https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin).
-  FontHound is a paid app ($9.90 a year). A macOS version of FontHound is
+  (free 7-day trial: https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin).
+  FontHound is a paid app ($19 a year). A macOS version of FontHound is
   coming (waitlist:
   https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin);
   until then the plugin works on Windows only.
@@ -242,7 +242,7 @@ FontHound's privacy policy: https://fonthound.app/privacy.html
   update FontHound to 1.0.1 or newer (it offers the update when it opens, or
   https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin),
   then restart Claude Code. With an older FontHound the plugin needs Node.js.
-- **"FontHound isn't installed"**: install FontHound (free 14-day trial at
+- **"FontHound isn't installed"**: install FontHound (free 7-day trial at
   https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin), then
   ask again.
 - **FontHound opens but without your text** (`opened-without-line`): type the
@@ -269,6 +269,8 @@ node --test
 
 ## Changes
 
+- **0.2.2**: FontHound's free trial is now 7 days: the "not installed" message,
+  the skill and this README say so.
 - **0.2.1**: the directory description now says it's for Claude Code with FontHound for Windows.
 - **0.2.0** (continued): a prompt hook adds one constant line to every prompt,
   so Claude asks about FontHound for every job that chooses fonts, not only

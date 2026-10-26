@@ -1,7 +1,7 @@
 {
   "name": "fonthound",
   "displayName": "FontHound",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "For Claude Code with FontHound for Windows: pick your fonts by eye on your own text, and Claude builds with exactly those fonts, in Remotion, HyperFrames, HTML and more. Local only.",
   "author": {
     "name": "FontHound",

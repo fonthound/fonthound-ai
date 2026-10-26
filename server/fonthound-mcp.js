@@ -56,12 +56,12 @@ const path = require('path');
 const childProcess = require('child_process');
 
 const NAME = 'fonthound';
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-// Where someone without FontHound goes: the free 14-day trial at /download (on a
+// Where someone without FontHound goes: the free 7-day trial at /download (on a
 // Mac the same page offers the Mac waitlist instead)
 const TRIAL_URL = 'https://fonthound.app/download?utm_source=claude-plugin&utm_medium=plugin';
-const NOT_INSTALLED_WIN = `FontHound isn't installed. It's a Windows font browser that shows the user's own text in every font they have, so they pick by eye and send the picks straight to Claude. Free 14-day trial: ${TRIAL_URL}`;
+const NOT_INSTALLED_WIN = `FontHound isn't installed. It's a Windows font browser that shows the user's own text in every font they have, so they pick by eye and send the picks straight to Claude. Free 7-day trial: ${TRIAL_URL}`;
 const NOT_INSTALLED_MAC = `FontHound is for Windows today; the Mac version is coming. Join the Mac waitlist: ${TRIAL_URL}`;
 const NOT_HERE = 'FontHound runs on Windows (and soon macOS); it can\'t be opened here.';
 const NO_SELECTION = 'No FontHound selection yet. Ask the user to open FontHound, put the fonts they like in the Mockup and press "Send to AI", then try again.';
